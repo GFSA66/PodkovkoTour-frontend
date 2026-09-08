@@ -3,12 +3,39 @@ import type { ReactNode, CSSProperties } from "react";
 import heroPhoto from "@/imports/aerial-view-of-coastal-resort-with-interconnected-pools-near-mai-khao-beach.png";
 
 // ─── API ──────────────────────────────────────────────────────────────────────
-// Vite: переменные окружения должны начинаться с VITE_ и лежат в .env фронтенда
 const API_URL = (import.meta as any).env?.VITE_API_URL ?? "http://localhost:8000/api";
+
+function getCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp("(^|;\\s*)" + name + "=([^;]*)"));
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
+// Для авторизационных запросов (register/login/logout/profile) — с сессионной
+// cookie (credentials: "include") и CSRF-токеном, который Django кладёт в
+// cookie "csrftoken" после /auth/csrf/. Публичные GET (тури, довідники) можно
+// дергать обычным fetch — они не требуют CSRF.
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const csrfToken = getCookie("csrftoken");
+  return fetch(`${API_URL}${path}`, {
+    ...options,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(csrfToken ? { "X-CSRFToken": csrfToken } : {}),
+      ...(options.headers || {}),
+    },
+  });
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Page = "home" | "tour" | "results" | "filters";
 type Modal = null | "booking" | "profile";
+
+interface User {
+  email: string;
+  full_name: string;
+  phone: string;
+}
 
 interface Tour {
   id: number;
@@ -20,15 +47,11 @@ interface Tour {
   price: string;
   img: string;
   is_hot: boolean;
-  // ── Необов'язкові "сирі" поля для розширеної фільтрації ──────────────────
-  // Повертаються TourListSerializer/TourDetailSerializer на бекенді. Якщо
-  // якогось поля серіалізатор ще не повертає — відповідний фільтр просто
-  // нікого не відсіює (безпечна деградація), решта фільтрів працює як і раніше.
   departure_city?: string;
   goal_city?: string;
   tour_operator?: string;
-  resort?: string; // курортна зона готелю (Hotel.resort)
-  departure_date?: string; // "YYYY-MM-DD"
+  resort?: string;
+  departure_date?: string;
   adults_count?: number;
   children?: boolean;
 }
@@ -38,22 +61,13 @@ interface TourDetail extends Tour {
   photos: string[];
 }
 
-// Довідники для селектів розширеного пошуку.
-// Ендпоінти бекенду:
-// GET /api/countries/, /api/departure-cities/, /api/goal-cities/, /api/tour-operators/
-// GET /api/resorts/ -> [{ id: "Аланія", name: "Аланія" }, ...] (унікальні Hotel.resort)
-// GET /api/meal-types/ -> [{ value: "AI", label: "Все включено" }, ...] (Tour.MealType.choices)
-// Кожен елемент довідника (крім meal-types) — { id, name }. Якщо ендпоінта ще
-// нема — відповідний select просто залишиться з одним пунктом "Будь-який".
 interface RefItem {
   id: number | string;
   name: string;
-  // Заповнюється лише для goalCities (GoalCity.country з бекенду) — потрібно,
-  // щоб зв'язати селекти "Країна" і "Курорт / місто" між собою.
   countryId?: number | string | null;
 }
 
-// ─── Filters (спільний стан для короткого і розширеного пошуку) ───────────────
+// ─── Filters ────────────────────────────────────────────────────────────────
 interface Filters {
   destination: string;
   countryId: string;
@@ -63,13 +77,13 @@ interface Filters {
   resort: string;
   dateFrom: string;
   dateTo: string;
-  starsMin: string; // "", "3", "4", "5"
-  meal: string; // "" або лейбл з MealType.choices
+  starsMin: string;
+  meal: string;
   nightsMin: string;
   nightsMax: string;
   priceMin: string;
   priceMax: string;
-  currency: string; // "" | "₴" | "$" | "€"
+  currency: string;
   adults: number;
   children: boolean;
   hotOnly: boolean;
@@ -96,10 +110,8 @@ const EMPTY_FILTERS: Filters = {
   hotOnly: false,
 };
 
-// Готелі в моделі бувають лише 3/4/5 зірок — тримаємо селекти консистентними з бекендом.
 const STAR_OPTIONS = [3, 4, 5];
 
-// Мають збігатися з Tour.Currency на бекенді (₴ UAH, $ USD, € EUR).
 const CURRENCY_OPTIONS = [
   { symbol: "₴", label: "Гривня (₴)" },
   { symbol: "$", label: "Долар ($)" },
@@ -125,7 +137,7 @@ interface RefLists {
   goalCities: RefItem[];
   operators: RefItem[];
   resorts: RefItem[];
-  mealTypes: RefItem[]; // id = код (напр. "AI"), name = лейбл (напр. "Все включено")
+  mealTypes: RefItem[];
 }
 
 function applyFilters(tours: Tour[], f: Filters, refs: RefLists): Tour[] {
@@ -140,7 +152,6 @@ function applyFilters(tours: Tour[], f: Filters, refs: RefLists): Tour[] {
       if (!t.name.toLowerCase().includes(q) && !t.country.toLowerCase().includes(q)) return false;
     }
     if (countryName && t.country !== countryName) return false;
-    // Наступні поля фільтрують тільки якщо бекенд їх повертає (див. коментар у Tour вище).
     if (departureCityName && t.departure_city && t.departure_city !== departureCityName) return false;
     if (goalCityName && t.goal_city && t.goal_city !== goalCityName) return false;
     if (operatorName && t.tour_operator && t.tour_operator !== operatorName) return false;
@@ -157,8 +168,10 @@ function applyFilters(tours: Tour[], f: Filters, refs: RefLists): Tour[] {
     if (f.priceMin && price != null && price < Number(f.priceMin)) return false;
     if (f.priceMax && price != null && price > Number(f.priceMax)) return false;
 
-    if (f.dateFrom && t.departure_date && t.departure_date < f.dateFrom) return false;
-    if (f.dateTo && t.departure_date && t.departure_date > f.dateTo) return false;
+    // Дата навмисно НЕ фільтрує тури — це поле збирається лише для того, щоб
+    // передати бажану дату вильоту менеджеру разом із заявкою на бронювання.
+    // Тур у моделі вже має власну фіксовану departure_date (конкретний виліт),
+    // а "Дата" в пошуку — це побажання клієнта, а не критерій відбору.
 
     if (f.adults !== EMPTY_FILTERS.adults && typeof t.adults_count === "number" && t.adults_count < f.adults) return false;
     if (f.children && t.children === false) return false;
@@ -199,7 +212,7 @@ function buildChips(f: Filters, refs: RefLists, onFiltersChange: (patch: Partial
   if (f.dateFrom || f.dateTo) {
     chips.push({
       id: "dates",
-      label: f.dateFrom && f.dateTo ? `${f.dateFrom} – ${f.dateTo}` : f.dateFrom || f.dateTo,
+      label: (f.dateFrom && f.dateTo ? `${f.dateFrom} – ${f.dateTo}` : f.dateFrom || f.dateTo) + " (для заявки)",
       onRemove: () => clear({ dateFrom: "", dateTo: "" }),
     });
   }
@@ -245,7 +258,7 @@ function Stars({ count, size = 16 }: { count: number; size?: number }) {
   );
 }
 
-// ─── Small shared form controls (Hero + AdvancedFilterPage) ───────────────────
+// ─── Small shared form controls ────────────────────────────────────────────────
 const fieldInputStyle: CSSProperties = { border: "1px solid #E2E4DF", fontSize: 15, height: 52 };
 const fieldInputClass =
   "px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-300 transition-all w-full bg-white";
@@ -293,10 +306,12 @@ function Header({
   onProfile,
   onPage,
   onOpenFilters,
+  user,
 }: {
   onProfile: () => void;
   onPage: (p: Page) => void;
   onOpenFilters: () => void;
+  user: User | null;
 }) {
   const [langOpen, setLangOpen] = useState(false);
   const [lang, setLang] = useState("RU");
@@ -344,11 +359,12 @@ function Header({
             </svg>
           </button>
 
-          <button onClick={onProfile} className="text-white/80 hover:text-white transition-colors" title="Профіль">
+          <button onClick={onProfile} className="relative text-white/80 hover:text-white transition-colors" title={user ? user.full_name || user.email : "Увійти / Зареєструватися"}>
             <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
               <circle cx="11" cy="8" r="4" />
               <path d="M3 20c0-4.4 3.6-8 8-8s8 3.6 8 8" />
             </svg>
+            {user && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full" style={{ background: "#5CEAB2" }} />}
           </button>
         </nav>
       </div>
@@ -392,7 +408,7 @@ function Hero({
             </div>
 
             <div className="flex flex-col gap-1" style={{ minWidth: 180 }}>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Дата</label>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Дата (для заявки)</label>
               <div className="relative">
                 <input
                   type="date"
@@ -422,7 +438,6 @@ function Hero({
                 ))}
               </select>
             </div>
-
 
             <div className="flex flex-col gap-1" style={{ minWidth: 160 }}>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Кількість осіб</label>
@@ -459,8 +474,6 @@ function AdvancedFilterPage({
   onSubmit: () => void;
   refs: RefLists;
 }) {
-  // Курорти/міста, звужені під обрану країну. Якщо країна ще не обрана —
-  // показуємо весь список як і раніше.
   const visibleGoalCities = filters.countryId
     ? refs.goalCities.filter((c) => c.countryId != null && String(c.countryId) === filters.countryId)
     : refs.goalCities;
@@ -470,8 +483,6 @@ function AdvancedFilterPage({
     const cityStillMatches = !currentCity || currentCity.countryId == null || String(currentCity.countryId) === countryId;
     onFiltersChange({
       countryId,
-      // Якщо обрана раніше курортна зона належить іншій країні — скидаємо її,
-      // щоб у формі не лишався невалідний вибір.
       ...(cityStillMatches ? {} : { goalCityId: "" }),
     });
   };
@@ -480,7 +491,6 @@ function AdvancedFilterPage({
     const city = refs.goalCities.find((c) => String(c.id) === goalCityId);
     onFiltersChange({
       goalCityId,
-      // Обрали курорт — одразу підставляємо його країну.
       ...(city?.countryId != null ? { countryId: String(city.countryId) } : {}),
     });
   };
@@ -559,10 +569,10 @@ function AdvancedFilterPage({
         </div>
 
         <div className="grid gap-5 mb-5" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
-          <Field label="Дата вильоту з">
+          <Field label="Дата вильоту з (для заявки)">
             <input type="date" value={filters.dateFrom} onChange={(e) => onFiltersChange({ dateFrom: e.target.value })} className={fieldInputClass} style={fieldInputStyle} />
           </Field>
-          <Field label="Дата вильоту по">
+          <Field label="Дата вильоту по (для заявки)">
             <input type="date" value={filters.dateTo} onChange={(e) => onFiltersChange({ dateTo: e.target.value })} className={fieldInputClass} style={fieldInputStyle} />
           </Field>
           <Field label="Ночей від">
@@ -754,12 +764,56 @@ function Footer() {
 }
 
 // ─── Booking Modal ─────────────────────────────────────────────────────────────
-function BookingModal({ tourId, tourName, onClose }: { tourId: number | null; tourName: string; onClose: () => void }) {
+function BookingModal({
+  tourId, tourName, user, preferredDateFrom, preferredDateTo,
+  partyAdults, partyChildren, onClose,
+}: {
+  tourId: number | null;
+  tourName: string;
+  user: User | null;
+  preferredDateFrom: string;
+  preferredDateTo: string;
+  partyAdults: number;
+  partyChildren: boolean;
+  onClose: () => void;
+}) {
   const [success, setSuccess] = useState(false);
-  const [createAccount, setCreateAccount] = useState(false);
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [name, setName] = useState("");
+  const [email, setEmail] = useState(user?.email ?? "");
+  const [phone, setPhone] = useState(user?.phone ?? "");
+  const [name, setName] = useState(user?.full_name ?? "");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const missingFields = !email.trim() || !phone.trim() || !name.trim();
+  const canSubmit = !missingFields && !submitting;
+
+  async function submit(channel: "viber" | "telegram") {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const res = await fetch(`${API_URL}/booking-requests/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tour: tourId,
+          tour_name: tourName,
+          email, phone, full_name: name,
+          contact_channel: channel,
+          preferred_date_from: preferredDateFrom || null,
+          preferred_date_to: preferredDateTo || null,
+          adults_count: partyAdults,
+          children: partyChildren,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSuccess(true);
+    } catch {
+      setSubmitError("Не вдалося відправити заявку. Спробуйте ще раз.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(15,25,20,0.55)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -778,60 +832,52 @@ function BookingModal({ tourId, tourName, onClose }: { tourId: number | null; to
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Тур</label>
                 <div className="h-13 px-4 flex items-center rounded-[10px] text-sm font-medium" style={{ background: "#F7F8F6", border: "1px solid #E2E4DF", height: 52 }}>{tourName}</div>
               </div>
+
+              {(preferredDateFrom || preferredDateTo) && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Бажана дата</label>
+                  <div className="h-13 px-4 flex items-center rounded-[10px] text-sm font-medium" style={{ background: "#F7F8F6", border: "1px solid #E2E4DF", height: 52 }}>
+                    {preferredDateFrom || "?"}{preferredDateTo ? ` – ${preferredDateTo}` : ""}
+                  </div>
+                </div>
+              )}
+
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Email</label>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                  Email {!email.trim() && <span style={{ color: "#D64545" }}>*</span>}
+                </label>
                 <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Введіть email" className="w-full h-13 px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Телефон</label>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                  Телефон {!phone.trim() && <span style={{ color: "#D64545" }}>*</span>}
+                </label>
                 <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+380..." className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Ім'я</label>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                  Ім'я {!name.trim() && <span style={{ color: "#D64545" }}>*</span>}
+                </label>
                 <input value={name} onChange={e => setName(e.target.value)} placeholder="Введіть ім'я" className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
               </div>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <div onClick={() => setCreateAccount(!createAccount)} className="w-5 h-5 rounded flex items-center justify-center transition-colors" style={{ border: "2px solid " + (createAccount ? "#2F6FED" : "#E2E4DF"), background: createAccount ? "#2F6FED" : "#fff" }}>
-                  {createAccount && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" /></svg>}
-                </div>
-                <span className="text-sm font-medium">Створити акаунт</span>
-              </label>
             </div>
+
+            {missingFields && !submitting && (
+              <p className="mt-3 text-xs" style={{ color: "#66716B" }}>Заповніть email, телефон та ім'я, щоб продовжити.</p>
+            )}
+            {submitError && <p className="mt-3 text-sm text-red-500">{submitError}</p>}
 
             <div className="mt-6">
               <p className="text-sm font-semibold mb-3" style={{ color: "#1F2A24" }}>Оберіть спосіб зв'язку</p>
               <div className="space-y-3">
                 <button
-                  onClick={async () => {
-                    try {
-                      await fetch(`${API_URL}/booking-requests/`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ tour: tourId, tour_name: tourName, email, phone, full_name: name, contact_channel: "viber" }),
-                      });
-                    } catch { /* сеть недоступна — всё равно показываем success, заявка не потеряется на UI */ }
-                    setSuccess(true);
-                  }}
-                  className="w-full h-13 rounded-[10px] text-white font-semibold flex items-center justify-center gap-2 transition-all hover:opacity-90" style={{ background: "#7360F2", height: 52 }}
-                >
-                  <svg width="18" height="18" viewBox="0 0 18 18" fill="white" opacity="0.9"><path d="M9 1C4.6 1 1 4.4 1 8.5c0 2.1 1 4 2.6 5.3V17l2.6-1.4c.9.2 1.8.4 2.8.4 4.4 0 8-3.4 8-7.5S13.4 1 9 1z" /></svg>
-                  Зв'язатися через Viber
-                </button>
-                <button
-                  onClick={async () => {
-                    try {
-                      await fetch(`${API_URL}/booking-requests/`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ tour: tourId, tour_name: tourName, email, phone, full_name: name, contact_channel: "telegram" }),
-                      });
-                    } catch { /* сеть недоступна */ }
-                    setSuccess(true);
-                  }}
-                  className="w-full rounded-[10px] text-white font-semibold flex items-center justify-center gap-2 transition-all hover:opacity-90" style={{ background: "#2AABEE", height: 52 }}
+                  disabled={!canSubmit}
+                  onClick={() => submit("telegram")}
+                  className="w-full rounded-[10px] text-white font-semibold flex items-center justify-center gap-2 transition-all hover:opacity-90 disabled:opacity-50"
+                  style={{ background: "#2AABEE", height: 52 }}
                 >
                   <svg width="18" height="18" viewBox="0 0 18 18" fill="white"><path d="M9 1C4.6 1 1 4.4 1 8.5c0 2.2 1 4.2 2.7 5.6L3.2 17l3.2-1.7c.8.2 1.7.3 2.6.3 4.4 0 8-3.4 8-7.5S13.4 1 9 1z" /></svg>
-                  Зв'язатися через Telegram
+                  {submitting ? "Відправка…" : "Зв'язатися через Telegram"}
                 </button>
               </div>
             </div>
@@ -850,16 +896,128 @@ function BookingModal({ tourId, tourName, onClose }: { tourId: number | null; to
   );
 }
 
-// ─── Profile Modal ─────────────────────────────────────────────────────────────
-function ProfileModal({ onClose }: { onClose: () => void }) {
+// ─── Auth / Profile Modal ───────────────────────────────────────────────────────
+function AuthProfileModal({
+  user,
+  onClose,
+  onAuthed,
+  onLoggedOut,
+}: {
+  user: User | null;
+  onClose: () => void;
+  onAuthed: (u: User) => void;
+  onLoggedOut: () => void;
+}) {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
   const [editing, setEditing] = useState(false);
+  const [fullName, setFullName] = useState(user?.full_name ?? "");
+  const [phone, setPhone] = useState(user?.phone ?? "");
+  const [savingProfile, setSavingProfile] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  useEffect(() => {
+    setFullName(user?.full_name ?? "");
+    setPhone(user?.phone ?? "");
+  }, [user]);
+
+  async function submitAuth() {
+    setSubmitting(true);
+    setAuthError(null);
+    try {
+      const path = mode === "login" ? "/auth/login/" : "/auth/register/";
+      const res = await apiFetch(path, { method: "POST", body: JSON.stringify({ email, password }) });
+      const data = await res.json();
+      if (!res.ok) {
+        setAuthError(data.detail || data.email?.[0] || data.password?.[0] || data.non_field_errors?.[0] || "Помилка. Перевірте дані.");
+        return;
+      }
+      onAuthed(data);
+    } catch {
+      setAuthError("Немає з'єднання з сервером.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function saveProfile() {
+    setSavingProfile(true);
+    try {
+      const res = await apiFetch("/auth/profile/", { method: "PATCH", body: JSON.stringify({ full_name: fullName, phone }) });
+      if (res.ok) {
+        onAuthed(await res.json());
+        setEditing(false);
+      }
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  async function logout() {
+    await apiFetch("/auth/logout/", { method: "POST" });
+    onLoggedOut();
+    onClose();
+  }
+
+  async function deleteAccount() {
+    await apiFetch("/auth/delete/", { method: "DELETE" });
+    onLoggedOut();
+    onClose();
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(15,25,20,0.55)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <img src={heroPhoto} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ filter: "blur(4px) brightness(0.35)", transform: "scale(1.05)" }} />
-      <div className="relative z-10 w-full" style={{ maxWidth: 520, background: "#fff", borderRadius: 20, padding: 32, boxShadow: "0 16px 48px rgba(31,42,36,0.18)", margin: "0 16px" }}>
-        {confirmDelete ? (
+
+      <div className="relative z-10 w-full" style={{ maxWidth: 440, background: "#fff", borderRadius: 20, padding: 32, boxShadow: "0 16px 48px rgba(31,42,36,0.18)", margin: "0 16px" }}>
+        {!user ? (
+          <>
+            <div className="flex items-center justify-between mb-6">
+              <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }}>
+                {mode === "login" ? "Вхід" : "Реєстрація"}
+              </h2>
+              <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 text-xl transition-colors">×</button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Email</label>
+                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Введіть email" className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Пароль</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Введіть пароль" className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
+              </div>
+            </div>
+
+            {authError && <p className="mt-3 text-sm text-red-500">{authError}</p>}
+
+            <button
+              onClick={submitAuth}
+              disabled={submitting || !email.trim() || !password.trim()}
+              className="w-full mt-6 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "#2F6FED", height: 52 }}
+            >
+              {submitting ? "Зачекайте…" : mode === "login" ? "Увійти" : "Зареєструватися"}
+            </button>
+
+            <p className="text-center text-sm mt-4" style={{ color: "#66716B" }}>
+              {mode === "login" ? (
+                <>Немає акаунту?{" "}
+                  <button onClick={() => { setMode("register"); setAuthError(null); }} className="font-semibold" style={{ color: "#2F6FED" }}>Зареєструватися</button>
+                </>
+              ) : (
+                <>Вже є акаунт?{" "}
+                  <button onClick={() => { setMode("login"); setAuthError(null); }} className="font-semibold" style={{ color: "#2F6FED" }}>Увійти</button>
+                </>
+              )}
+            </p>
+          </>
+        ) : confirmDelete ? (
           <div className="text-center py-6">
             <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#D64545" strokeWidth="2" strokeLinecap="round"><path d="M12 9v4M12 17h.01M10.3 3.5L2 20h20L13.7 3.5a2 2 0 0 0-3.4 0z" /></svg>
@@ -868,7 +1026,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
             <p className="text-sm text-gray-500 mb-6">Ця дія незворотна. Усі ваші дані будуть видалені.</p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmDelete(false)} className="flex-1 h-12 rounded-[10px] font-semibold text-sm border transition-colors hover:bg-gray-50" style={{ border: "1px solid #E2E4DF" }}>Скасувати</button>
-              <button className="flex-1 h-12 rounded-[10px] font-semibold text-sm text-white transition-opacity hover:opacity-90" style={{ background: "#D64545" }}>Так, видалити</button>
+              <button onClick={deleteAccount} className="flex-1 h-12 rounded-[10px] font-semibold text-sm text-white transition-opacity hover:opacity-90" style={{ background: "#D64545" }}>Так, видалити</button>
             </div>
           </div>
         ) : (
@@ -877,27 +1035,47 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
               <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }}>Профіль</h2>
               <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 text-xl transition-colors">×</button>
             </div>
-            <div className="flex gap-8 mb-8">
-              <div className="flex flex-col items-center gap-3 flex-shrink-0">
-                <div className="w-28 h-28 rounded-full flex items-center justify-center" style={{ background: "#F7F8F6", border: "2px solid #E2E4DF" }}>
-                  <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#C5CAC3" strokeWidth="1.5"><circle cx="24" cy="18" r="9" /><path d="M6 44c0-9.9 8.1-18 18-18s18 8.1 18 18" /></svg>
-                </div>
-                <button onClick={() => setEditing(!editing)} className="h-10 px-4 rounded-[10px] text-sm font-medium transition-colors hover:bg-gray-50" style={{ border: "1px solid #E2E4DF", color: "#1F2A24", minWidth: 112 }}>{editing ? "Зберегти" : "Редагувати"}</button>
+
+            <div className="space-y-5 mb-8">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#66716B" }}>Email</p>
+                <p className="text-base font-semibold">{user.email}</p>
               </div>
-              <div className="flex-1 space-y-5">
-                {[{ label: "Ім'я", value: "Олена Мороз" }, { label: "Email", value: "olena.moroz@gmail.com" }, { label: "Телефон", value: "+38 (067) 123-45-67" }].map((f) => (
-                  <div key={f.label}>
-                    <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#66716B" }}>{f.label}</p>
-                    {editing ? (
-                      <input defaultValue={f.value} className="w-full px-3 py-2 rounded-[10px] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-300" style={{ border: "1px solid #E2E4DF" }} />
-                    ) : (
-                      <p className="text-base font-semibold">{f.value}</p>
-                    )}
-                  </div>
-                ))}
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#66716B" }}>Ім'я</p>
+                {editing ? (
+                  <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Введіть ім'я" className="w-full px-3 py-2 rounded-[10px] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-300" style={{ border: "1px solid #E2E4DF" }} />
+                ) : (
+                  <p className="text-base font-semibold">{user.full_name || "— не вказано —"}</p>
+                )}
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#66716B" }}>Телефон</p>
+                {editing ? (
+                  <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+380..." className="w-full px-3 py-2 rounded-[10px] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-300" style={{ border: "1px solid #E2E4DF" }} />
+                ) : (
+                  <p className="text-base font-semibold">{user.phone || "— не вказано —"}</p>
+                )}
               </div>
             </div>
-            <button onClick={() => setConfirmDelete(true)} className="w-full h-12 rounded-[10px] text-white font-semibold text-sm transition-opacity hover:opacity-90" style={{ background: "#D64545" }}>Видалити акаунт</button>
+
+            <div className="flex gap-3 mb-3">
+              <button
+                onClick={() => (editing ? saveProfile() : setEditing(true))}
+                disabled={savingProfile}
+                className="flex-1 h-12 rounded-[10px] text-sm font-medium transition-colors hover:bg-gray-50 disabled:opacity-50"
+                style={{ border: "1px solid #E2E4DF", color: "#1F2A24" }}
+              >
+                {savingProfile ? "Збереження…" : editing ? "Зберегти" : "Редагувати"}
+              </button>
+              <button onClick={logout} className="flex-1 h-12 rounded-[10px] text-sm font-medium transition-colors hover:bg-gray-50" style={{ border: "1px solid #E2E4DF", color: "#1F2A24" }}>
+                Вийти
+              </button>
+            </div>
+
+            <button onClick={() => setConfirmDelete(true)} className="w-full h-12 rounded-[10px] text-white font-semibold text-sm transition-opacity hover:opacity-90" style={{ background: "#D64545" }}>
+              Видалити акаунт
+            </button>
           </>
         )}
       </div>
@@ -1089,8 +1267,6 @@ export default function App() {
   const [toursLoading, setToursLoading] = useState(true);
   const [toursError, setToursError] = useState<string | null>(null);
 
-  // ── Filters live at the App level so Hero, the header, the advanced page,
-  // and the results-page chips all read/write the same single source of truth.
   const [filters, setFiltersState] = useState<Filters>(EMPTY_FILTERS);
   const setFilters = (patch: Partial<Filters>) => setFiltersState((prev) => ({ ...prev, ...patch }));
 
@@ -1100,6 +1276,43 @@ export default function App() {
   const [operators, setOperators] = useState<RefItem[]>([]);
   const [resorts, setResorts] = useState<RefItem[]>([]);
   const [mealTypes, setMealTypes] = useState<RefItem[]>([]);
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  const [user, setUser] = useState<User | null>(null);
+  const [userLoading, setUserLoading] = useState(true);
+  // Якщо гість тиснув "Забронювати" — запам'ятовуємо намір, і одразу після
+  // успішного логіна/реєстрації відкриваємо саме форму брони, а не профіль.
+  const [pendingBooking, setPendingBooking] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await apiFetch("/auth/csrf/");
+        const res = await apiFetch("/auth/me/");
+        if (res.ok && !cancelled) {
+          setUser(await res.json());
+        }
+      } catch {
+        // бекенд недоступний або гість — просто лишаємось незалогіненими
+      } finally {
+        if (!cancelled) setUserLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleAuthed = (u: User) => {
+    setUser(u);
+    if (pendingBooking) {
+      setPendingBooking(false);
+      setModal("booking");
+    }
+  };
+
+  const handleLoggedOut = () => {
+    setUser(null);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -1118,8 +1331,6 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-  // Довідники для селектів розширеного пошуку. Якщо якогось ендпоінта ще
-  // нема на бекенді — просто отримаємо порожній список, нічого не зламається.
   useEffect(() => {
     const load = async (url: string, setter: (v: RefItem[]) => void) => {
       try {
@@ -1127,8 +1338,6 @@ export default function App() {
         if (!res.ok) throw new Error(String(res.status));
         const data = await res.json();
         const list: any[] = Array.isArray(data) ? data : data.results ?? [];
-        // GoalCitySerializer додатково повертає "country" (id країни) — інші
-        // довідники це поле просто не мають, тоді countryId лишається null.
         setter(list.map((item) => ({ id: item.id, name: item.name, countryId: item.country ?? null })));
       } catch {
         setter([]);
@@ -1140,8 +1349,6 @@ export default function App() {
     load(`${API_URL}/tour-operators/`, setOperators);
     load(`${API_URL}/resorts/`, setResorts);
 
-    // Окремо: meal-types має іншу форму відповіді ({value, label}, не {id, name}),
-    // тому мапимо її під RefItem самостійно.
     (async () => {
       try {
         const res = await fetch(`${API_URL}/meal-types/`);
@@ -1163,6 +1370,13 @@ export default function App() {
 
   const openBooking = (tour: Tour) => {
     setSelectedTour(tour);
+    if (!user) {
+      // Гість — спочатку відправляємо на вхід/реєстрацію, бронь відкриється
+      // автоматично одразу після успішного логіна (див. handleAuthed).
+      setPendingBooking(true);
+      setModal("profile");
+      return;
+    }
     setModal("booking");
   };
 
@@ -1171,12 +1385,17 @@ export default function App() {
     setPage("tour");
   };
 
+  const openProfile = () => {
+    setPendingBooking(false);
+    setModal("profile");
+  };
+
   const openFilters = () => setPage("filters");
   const runSearch = () => setPage("results");
 
   return (
     <div className="min-h-full flex flex-col" style={{ background: "#F7F8F6" }}>
-      <Header onProfile={() => setModal("profile")} onPage={setPage} onOpenFilters={openFilters} />
+      <Header onProfile={openProfile} onPage={setPage} onOpenFilters={openFilters} user={user} />
 
       {toursError && (
         <div className="max-w-[1200px] mx-auto px-6 mt-4 w-full">
@@ -1212,10 +1431,24 @@ export default function App() {
       <Footer />
 
       {modal === "booking" && (
-        <BookingModal tourId={selectedTour?.id ?? null} tourName={selectedTour?.name ?? ""} onClose={() => setModal(null)} />
+        <BookingModal
+          tourId={selectedTour?.id ?? null}
+          tourName={selectedTour?.name ?? ""}
+          user={user}
+          preferredDateFrom={filters.dateFrom}
+          preferredDateTo={filters.dateTo}
+          partyAdults={filters.adults}
+          partyChildren={filters.children}
+          onClose={() => setModal(null)}
+        />
       )}
       {modal === "profile" && (
-        <ProfileModal onClose={() => setModal(null)} />
+        <AuthProfileModal
+          user={user}
+          onClose={() => { setModal(null); setPendingBooking(false); }}
+          onAuthed={handleAuthed}
+          onLoggedOut={handleLoggedOut}
+        />
       )}
     </div>
   );
