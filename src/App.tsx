@@ -131,6 +131,17 @@ function parseCurrencySymbol(price: string): string | null {
   return null;
 }
 
+// Додає задану кількість ночей до дати "YYYY-MM-DD" і повертає теж "YYYY-MM-DD".
+// Використовується і в пошуку (дата вильоту + ночей → дата вильоту "по"),
+// і в заявці на бронювання (дата вильоту + ночі конкретного туру → дата повернення).
+function addNights(dateStr: string, nights: number): string {
+  if (!dateStr || !nights || nights <= 0) return "";
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d.getTime())) return "";
+  d.setDate(d.getDate() + nights);
+  return d.toISOString().slice(0, 10);
+}
+
 interface RefLists {
   countries: RefItem[];
   departureCities: RefItem[];
@@ -495,6 +506,30 @@ function AdvancedFilterPage({
     });
   };
 
+  // "Дата вильоту по" рахуємо автоматично від "Дата вильоту з" + кількість
+  // ночей (беремо "Ночей від", а якщо воно не задане — "Ночей до"). Поле
+  // залишається звичайним інпутом, тож дату завжди можна поправити вручну.
+  const handleDateFromChange = (value: string) => {
+    const nights = Number(filters.nightsMin || filters.nightsMax);
+    const patch: Partial<Filters> = { dateFrom: value };
+    if (value && nights > 0) patch.dateTo = addNights(value, nights);
+    onFiltersChange(patch);
+  };
+
+  const handleNightsMinChange = (value: string) => {
+    const patch: Partial<Filters> = { nightsMin: value };
+    const nights = Number(value || filters.nightsMax);
+    if (filters.dateFrom && nights > 0) patch.dateTo = addNights(filters.dateFrom, nights);
+    onFiltersChange(patch);
+  };
+
+  const handleNightsMaxChange = (value: string) => {
+    const patch: Partial<Filters> = { nightsMax: value };
+    const nights = Number(filters.nightsMin || value);
+    if (filters.dateFrom && nights > 0) patch.dateTo = addNights(filters.dateFrom, nights);
+    onFiltersChange(patch);
+  };
+
   return (
     <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16">
       <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }} className="mb-6">
@@ -570,16 +605,17 @@ function AdvancedFilterPage({
 
         <div className="grid gap-5 mb-5" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
           <Field label="Дата вильоту з (для заявки)">
-            <input type="date" value={filters.dateFrom} onChange={(e) => onFiltersChange({ dateFrom: e.target.value })} className={fieldInputClass} style={fieldInputStyle} />
+            <input type="date" value={filters.dateFrom} onChange={(e) => handleDateFromChange(e.target.value)} className={fieldInputClass} style={fieldInputStyle} />
           </Field>
           <Field label="Дата вильоту по (для заявки)">
             <input type="date" value={filters.dateTo} onChange={(e) => onFiltersChange({ dateTo: e.target.value })} className={fieldInputClass} style={fieldInputStyle} />
+            <span className="text-[11px]" style={{ color: "#66716B" }}>Рахується автоматично за кількістю ночей — можна поправити вручну</span>
           </Field>
           <Field label="Ночей від">
-            <input type="number" min={1} value={filters.nightsMin} onChange={(e) => onFiltersChange({ nightsMin: e.target.value })} placeholder="1" className={fieldInputClass} style={fieldInputStyle} />
+            <input type="number" min={1} value={filters.nightsMin} onChange={(e) => handleNightsMinChange(e.target.value)} placeholder="1" className={fieldInputClass} style={fieldInputStyle} />
           </Field>
           <Field label="Ночей до">
-            <input type="number" min={1} value={filters.nightsMax} onChange={(e) => onFiltersChange({ nightsMax: e.target.value })} placeholder="14" className={fieldInputClass} style={fieldInputStyle} />
+            <input type="number" min={1} value={filters.nightsMax} onChange={(e) => handleNightsMaxChange(e.target.value)} placeholder="14" className={fieldInputClass} style={fieldInputStyle} />
           </Field>
         </div>
 
@@ -765,11 +801,12 @@ function Footer() {
 
 // ─── Booking Modal ─────────────────────────────────────────────────────────────
 function BookingModal({
-  tourId, tourName, user, preferredDateFrom, preferredDateTo,
+  tourId, tourName, tourNights, user, preferredDateFrom, preferredDateTo,
   partyAdults, partyChildren, onClose,
 }: {
   tourId: number | null;
   tourName: string;
+  tourNights: number | null;
   user: User | null;
   preferredDateFrom: string;
   preferredDateTo: string;
@@ -783,11 +820,19 @@ function BookingModal({
   const [name, setName] = useState(user?.full_name ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [departureDate, setDepartureDate] = useState(preferredDateFrom || "");
+
+  // Дата повернення рахується автоматично з дати вильоту + кількість ночей
+  // САМЕ цього туру (Tour.nights) — це те, що вже "розраховано в турі", тож
+  // вручну другу дату вводити не треба. Якщо кількість ночей з якоїсь
+  // причини невідома — підстраховуємось раніше введеним preferredDateTo.
+  const returnDate = tourNights != null ? addNights(departureDate, tourNights) : preferredDateTo;
 
   const missingFields = !email.trim() || !phone.trim() || !name.trim();
   const canSubmit = !missingFields && !submitting;
+  const [preferredContact, setPreferredContact] = useState<"viber" | "telegram">("telegram");
 
-  async function submit(channel: "viber" | "telegram") {
+  async function submit() {
     if (!canSubmit) return;
     setSubmitting(true);
     setSubmitError(null);
@@ -799,9 +844,9 @@ function BookingModal({
           tour: tourId,
           tour_name: tourName,
           email, phone, full_name: name,
-          contact_channel: channel,
-          preferred_date_from: preferredDateFrom || null,
-          preferred_date_to: preferredDateTo || null,
+          preferred_contact: preferredContact,
+          preferred_date_from: departureDate || null,
+          preferred_date_to: returnDate || null,
           adults_count: partyAdults,
           children: partyChildren,
         }),
@@ -833,14 +878,26 @@ function BookingModal({
                 <div className="h-13 px-4 flex items-center rounded-[10px] text-sm font-medium" style={{ background: "#F7F8F6", border: "1px solid #E2E4DF", height: 52 }}>{tourName}</div>
               </div>
 
-              {(preferredDateFrom || preferredDateTo) && (
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Бажана дата</label>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Дата вильоту</label>
+                  <input
+                    type="date"
+                    value={departureDate}
+                    onChange={(e) => setDepartureDate(e.target.value)}
+                    className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                    style={{ border: "1px solid #E2E4DF", height: 52 }}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                    Дата повернення{tourNights != null ? ` (${tourNights} ноч.)` : ""}
+                  </label>
                   <div className="h-13 px-4 flex items-center rounded-[10px] text-sm font-medium" style={{ background: "#F7F8F6", border: "1px solid #E2E4DF", height: 52 }}>
-                    {preferredDateFrom || "?"}{preferredDateTo ? ` – ${preferredDateTo}` : ""}
+                    {returnDate || "оберіть дату вильоту"}
                   </div>
                 </div>
-              )}
+              </div>
 
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
@@ -868,18 +925,32 @@ function BookingModal({
             {submitError && <p className="mt-3 text-sm text-red-500">{submitError}</p>}
 
             <div className="mt-6">
-              <p className="text-sm font-semibold mb-3" style={{ color: "#1F2A24" }}>Оберіть спосіб зв'язку</p>
-              <div className="space-y-3">
-                <button
-                  disabled={!canSubmit}
-                  onClick={() => submit("telegram")}
-                  className="w-full rounded-[10px] text-white font-semibold flex items-center justify-center gap-2 transition-all hover:opacity-90 disabled:opacity-50"
-                  style={{ background: "#2AABEE", height: 52 }}
-                >
-                  <svg width="18" height="18" viewBox="0 0 18 18" fill="white"><path d="M9 1C4.6 1 1 4.4 1 8.5c0 2.2 1 4.2 2.7 5.6L3.2 17l3.2-1.7c.8.2 1.7.3 2.6.3 4.4 0 8-3.4 8-7.5S13.4 1 9 1z" /></svg>
-                  {submitting ? "Відправка…" : "Зв'язатися через Telegram"}
-                </button>
+              <p className="text-sm font-semibold mb-3" style={{ color: "#1F2A24" }}>Як з вами краще зв'язатися?</p>
+              <div className="flex gap-2 mb-4">
+                {(["viber", "telegram"] as const).map((ch) => (
+                  <button
+                    key={ch}
+                    onClick={() => setPreferredContact(ch)}
+                    className="flex-1 h-11 rounded-[10px] text-sm font-semibold transition-all"
+                    style={{
+                      border: "1px solid " + (preferredContact === ch ? "#2F6FED" : "#E2E4DF"),
+                      background: preferredContact === ch ? "#2F6FED" : "#fff",
+                      color: preferredContact === ch ? "#fff" : "#1F2A24",
+                    }}
+                  >
+                    {ch === "viber" ? "Viber" : "Telegram"}
+                  </button>
+                ))}
               </div>
+
+              <button
+                disabled={!canSubmit}
+                onClick={() => submit()}
+                className="w-full h-13 rounded-[10px] text-white font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+                style={{ background: "#2F6FED", height: 52 }}
+              >
+                {submitting ? "Відправка…" : "Надіслати заявку"}
+              </button>
             </div>
           </>
         ) : (
@@ -1429,11 +1500,11 @@ export default function App() {
       </main>
 
       <Footer />
-
       {modal === "booking" && (
         <BookingModal
           tourId={selectedTour?.id ?? null}
           tourName={selectedTour?.name ?? ""}
+          tourNights={selectedTour?.nights ?? null}
           user={user}
           preferredDateFrom={filters.dateFrom}
           preferredDateTo={filters.dateTo}
