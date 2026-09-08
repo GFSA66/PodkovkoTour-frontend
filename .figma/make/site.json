@@ -1,0 +1,11 @@
+{
+  "title": "Tour Agency",
+  "description": "This web application serves as a travel agency platform, offering users a seamless interface to explore travel options, manage bookings, and personalize their profiles.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
