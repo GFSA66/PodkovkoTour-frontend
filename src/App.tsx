@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import type { ReactNode, CSSProperties } from "react";
 import heroPhoto from "@/imports/aerial-view-of-coastal-resort-with-interconnected-pools-near-mai-khao-beach.png";
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -6,7 +7,7 @@ import heroPhoto from "@/imports/aerial-view-of-coastal-resort-with-interconnect
 const API_URL = (import.meta as any).env?.VITE_API_URL ?? "http://localhost:8000/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Page = "home" | "tour" | "results";
+type Page = "home" | "tour" | "results" | "filters";
 type Modal = null | "booking" | "profile";
 
 interface Tour {
@@ -19,11 +20,216 @@ interface Tour {
   price: string;
   img: string;
   is_hot: boolean;
+  // ── Необов'язкові "сирі" поля для розширеної фільтрації ──────────────────
+  // Повертаються TourListSerializer/TourDetailSerializer на бекенді. Якщо
+  // якогось поля серіалізатор ще не повертає — відповідний фільтр просто
+  // нікого не відсіює (безпечна деградація), решта фільтрів працює як і раніше.
+  departure_city?: string;
+  goal_city?: string;
+  tour_operator?: string;
+  resort?: string; // курортна зона готелю (Hotel.resort)
+  departure_date?: string; // "YYYY-MM-DD"
+  adults_count?: number;
+  children?: boolean;
 }
 
 interface TourDetail extends Tour {
   description: string;
   photos: string[];
+}
+
+// Довідники для селектів розширеного пошуку.
+// Ендпоінти бекенду:
+// GET /api/countries/, /api/departure-cities/, /api/goal-cities/, /api/tour-operators/
+// GET /api/resorts/ -> [{ id: "Аланія", name: "Аланія" }, ...] (унікальні Hotel.resort)
+// GET /api/meal-types/ -> [{ value: "AI", label: "Все включено" }, ...] (Tour.MealType.choices)
+// Кожен елемент довідника (крім meal-types) — { id, name }. Якщо ендпоінта ще
+// нема — відповідний select просто залишиться з одним пунктом "Будь-який".
+interface RefItem {
+  id: number | string;
+  name: string;
+  // Заповнюється лише для goalCities (GoalCity.country з бекенду) — потрібно,
+  // щоб зв'язати селекти "Країна" і "Курорт / місто" між собою.
+  countryId?: number | string | null;
+}
+
+// ─── Filters (спільний стан для короткого і розширеного пошуку) ───────────────
+interface Filters {
+  destination: string;
+  countryId: string;
+  departureCityId: string;
+  goalCityId: string;
+  tourOperatorId: string;
+  resort: string;
+  dateFrom: string;
+  dateTo: string;
+  starsMin: string; // "", "3", "4", "5"
+  meal: string; // "" або лейбл з MealType.choices
+  nightsMin: string;
+  nightsMax: string;
+  priceMin: string;
+  priceMax: string;
+  currency: string; // "" | "₴" | "$" | "€"
+  adults: number;
+  children: boolean;
+  hotOnly: boolean;
+}
+
+const EMPTY_FILTERS: Filters = {
+  destination: "",
+  countryId: "",
+  departureCityId: "",
+  goalCityId: "",
+  tourOperatorId: "",
+  resort: "",
+  dateFrom: "",
+  dateTo: "",
+  starsMin: "",
+  meal: "",
+  nightsMin: "",
+  nightsMax: "",
+  priceMin: "",
+  priceMax: "",
+  currency: "",
+  adults: 2,
+  children: false,
+  hotOnly: false,
+};
+
+// Готелі в моделі бувають лише 3/4/5 зірок — тримаємо селекти консистентними з бекендом.
+const STAR_OPTIONS = [3, 4, 5];
+
+// Мають збігатися з Tour.Currency на бекенді (₴ UAH, $ USD, € EUR).
+const CURRENCY_OPTIONS = [
+  { symbol: "₴", label: "Гривня (₴)" },
+  { symbol: "$", label: "Долар ($)" },
+  { symbol: "€", label: "Євро (€)" },
+];
+
+function parsePrice(price: string): number | null {
+  const match = price.replace(/\s/g, "").match(/\d+([.,]\d+)?/);
+  if (!match) return null;
+  return parseFloat(match[0].replace(",", "."));
+}
+
+function parseCurrencySymbol(price: string): string | null {
+  if (price.includes("₴")) return "₴";
+  if (price.includes("€")) return "€";
+  if (price.includes("$")) return "$";
+  return null;
+}
+
+interface RefLists {
+  countries: RefItem[];
+  departureCities: RefItem[];
+  goalCities: RefItem[];
+  operators: RefItem[];
+  resorts: RefItem[];
+  mealTypes: RefItem[]; // id = код (напр. "AI"), name = лейбл (напр. "Все включено")
+}
+
+function applyFilters(tours: Tour[], f: Filters, refs: RefLists): Tour[] {
+  const countryName = refs.countries.find((c) => String(c.id) === f.countryId)?.name;
+  const departureCityName = refs.departureCities.find((c) => String(c.id) === f.departureCityId)?.name;
+  const goalCityName = refs.goalCities.find((c) => String(c.id) === f.goalCityId)?.name;
+  const operatorName = refs.operators.find((c) => String(c.id) === f.tourOperatorId)?.name;
+
+  return tours.filter((t) => {
+    if (f.destination) {
+      const q = f.destination.toLowerCase();
+      if (!t.name.toLowerCase().includes(q) && !t.country.toLowerCase().includes(q)) return false;
+    }
+    if (countryName && t.country !== countryName) return false;
+    // Наступні поля фільтрують тільки якщо бекенд їх повертає (див. коментар у Tour вище).
+    if (departureCityName && t.departure_city && t.departure_city !== departureCityName) return false;
+    if (goalCityName && t.goal_city && t.goal_city !== goalCityName) return false;
+    if (operatorName && t.tour_operator && t.tour_operator !== operatorName) return false;
+    if (f.resort && t.resort && t.resort !== f.resort) return false;
+
+    if (f.starsMin && t.stars < Number(f.starsMin)) return false;
+    if (f.meal && t.meal !== f.meal) return false;
+    if (f.nightsMin && t.nights < Number(f.nightsMin)) return false;
+    if (f.nightsMax && t.nights > Number(f.nightsMax)) return false;
+
+    if (f.currency && parseCurrencySymbol(t.price) !== f.currency) return false;
+
+    const price = parsePrice(t.price);
+    if (f.priceMin && price != null && price < Number(f.priceMin)) return false;
+    if (f.priceMax && price != null && price > Number(f.priceMax)) return false;
+
+    if (f.dateFrom && t.departure_date && t.departure_date < f.dateFrom) return false;
+    if (f.dateTo && t.departure_date && t.departure_date > f.dateTo) return false;
+
+    if (f.adults !== EMPTY_FILTERS.adults && typeof t.adults_count === "number" && t.adults_count < f.adults) return false;
+    if (f.children && t.children === false) return false;
+    if (f.hotOnly && !t.is_hot) return false;
+
+    return true;
+  });
+}
+
+interface Chip {
+  id: string;
+  label: string;
+  onRemove: () => void;
+}
+
+function buildChips(f: Filters, refs: RefLists, onFiltersChange: (patch: Partial<Filters>) => void): Chip[] {
+  const chips: Chip[] = [];
+  const clear = (patch: Partial<Filters>) => onFiltersChange(patch);
+
+  if (f.destination) chips.push({ id: "destination", label: f.destination, onRemove: () => clear({ destination: "" }) });
+  if (f.countryId) {
+    const name = refs.countries.find((c) => String(c.id) === f.countryId)?.name ?? "Країна";
+    chips.push({ id: "country", label: name, onRemove: () => clear({ countryId: "" }) });
+  }
+  if (f.departureCityId) {
+    const name = refs.departureCities.find((c) => String(c.id) === f.departureCityId)?.name ?? "Виліт";
+    chips.push({ id: "departureCity", label: `Виліт: ${name}`, onRemove: () => clear({ departureCityId: "" }) });
+  }
+  if (f.goalCityId) {
+    const name = refs.goalCities.find((c) => String(c.id) === f.goalCityId)?.name ?? "Курорт";
+    chips.push({ id: "goalCity", label: name, onRemove: () => clear({ goalCityId: "" }) });
+  }
+  if (f.tourOperatorId) {
+    const name = refs.operators.find((c) => String(c.id) === f.tourOperatorId)?.name ?? "Оператор";
+    chips.push({ id: "operator", label: name, onRemove: () => clear({ tourOperatorId: "" }) });
+  }
+  if (f.resort) chips.push({ id: "resort", label: f.resort, onRemove: () => clear({ resort: "" }) });
+  if (f.dateFrom || f.dateTo) {
+    chips.push({
+      id: "dates",
+      label: f.dateFrom && f.dateTo ? `${f.dateFrom} – ${f.dateTo}` : f.dateFrom || f.dateTo,
+      onRemove: () => clear({ dateFrom: "", dateTo: "" }),
+    });
+  }
+  if (f.starsMin) chips.push({ id: "stars", label: `${f.starsMin}★ і вище`, onRemove: () => clear({ starsMin: "" }) });
+  if (f.meal) chips.push({ id: "meal", label: f.meal, onRemove: () => clear({ meal: "" }) });
+  if (f.nightsMin || f.nightsMax) {
+    chips.push({
+      id: "nights",
+      label: `${f.nightsMin || "0"}–${f.nightsMax || "∞"} ночей`,
+      onRemove: () => clear({ nightsMin: "", nightsMax: "" }),
+    });
+  }
+  if (f.priceMin || f.priceMax) {
+    chips.push({
+      id: "price",
+      label: `${f.priceMin || "0"}–${f.priceMax || "∞"} ${f.currency}`.trim(),
+      onRemove: () => clear({ priceMin: "", priceMax: "" }),
+    });
+  }
+  if (f.currency) {
+    const label = CURRENCY_OPTIONS.find((c) => c.symbol === f.currency)?.label ?? f.currency;
+    chips.push({ id: "currency", label, onRemove: () => clear({ currency: "" }) });
+  }
+  if (f.adults !== EMPTY_FILTERS.adults) {
+    chips.push({ id: "adults", label: `${f.adults} особи`, onRemove: () => clear({ adults: EMPTY_FILTERS.adults }) });
+  }
+  if (f.children) chips.push({ id: "children", label: "З дітьми", onRemove: () => clear({ children: false }) });
+  if (f.hotOnly) chips.push({ id: "hot", label: "Гарячі 🔥", onRemove: () => clear({ hotOnly: false }) });
+
+  return chips;
 }
 
 // ─── Stars ────────────────────────────────────────────────────────────────────
@@ -39,13 +245,58 @@ function Stars({ count, size = 16 }: { count: number; size?: number }) {
   );
 }
 
+// ─── Small shared form controls (Hero + AdvancedFilterPage) ───────────────────
+const fieldInputStyle: CSSProperties = { border: "1px solid #E2E4DF", fontSize: 15, height: 52 };
+const fieldInputClass =
+  "px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-300 transition-all w-full bg-white";
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function Stepper({ value, onChange, min = 1, max = 10 }: { value: number; onChange: (v: number) => void; min?: number; max?: number }) {
+  return (
+    <div className="flex items-center px-3 rounded-[10px] border gap-3" style={{ border: "1px solid #E2E4DF", height: 52 }}>
+      <button type="button" onClick={() => onChange(Math.max(min, value - 1))} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 font-bold transition-colors">−</button>
+      <span className="flex-1 text-center text-sm font-semibold">{value}</span>
+      <button type="button" onClick={() => onChange(Math.min(max, value + 1))} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 font-bold transition-colors">+</button>
+    </div>
+  );
+}
+
+function Checkbox({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <label className="flex items-center gap-3 cursor-pointer">
+      <div
+        onClick={() => onChange(!checked)}
+        className="w-5 h-5 rounded flex items-center justify-center transition-colors"
+        style={{ border: "2px solid " + (checked ? "#2F6FED" : "#E2E4DF"), background: checked ? "#2F6FED" : "#fff" }}
+      >
+        {checked && (
+          <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+            <path d="M1 4l3 3 5-6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+        )}
+      </div>
+      <span className="text-sm font-medium">{label}</span>
+    </label>
+  );
+}
+
 // ─── Header ───────────────────────────────────────────────────────────────────
 function Header({
   onProfile,
   onPage,
+  onOpenFilters,
 }: {
   onProfile: () => void;
   onPage: (p: Page) => void;
+  onOpenFilters: () => void;
 }) {
   const [langOpen, setLangOpen] = useState(false);
   const [lang, setLang] = useState("RU");
@@ -64,7 +315,7 @@ function Header({
         </button>
 
         <nav className="flex items-center gap-6">
-          <button className="text-white/90 hover:text-white text-sm font-medium transition-colors" onClick={() => onPage("results")}>
+          <button className="text-white/90 hover:text-white text-sm font-medium transition-colors" onClick={onOpenFilters}>
             Розширений фільтр
           </button>
 
@@ -105,13 +356,18 @@ function Header({
   );
 }
 
-// ─── Hero / Search ─────────────────────────────────────────────────────────────
-function Hero({ onSearch }: { onSearch: () => void }) {
-  const [destination, setDestination] = useState("");
-  const [date, setDate] = useState("");
-  const [stars, setStars] = useState("");
-  const [people, setPeople] = useState(2);
-
+// ─── Hero / Short search ────────────────────────────────────────────────────────
+function Hero({
+  filters,
+  onFiltersChange,
+  onSearch,
+  onOpenFilters,
+}: {
+  filters: Filters;
+  onFiltersChange: (patch: Partial<Filters>) => void;
+  onSearch: () => void;
+  onOpenFilters: () => void;
+}) {
   return (
     <section className="relative w-full" style={{ height: 480 }}>
       <img src={heroPhoto} alt="Coastal resort aerial view" className="absolute inset-0 w-full h-full object-cover" />
@@ -126,13 +382,25 @@ function Hero({ onSearch }: { onSearch: () => void }) {
           <div className="flex gap-4 flex-wrap">
             <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Куди</label>
-              <input value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Країна / місто" className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all" style={{ border: "1px solid #E2E4DF", fontSize: 15 }} />
+              <input
+                value={filters.destination}
+                onChange={(e) => onFiltersChange({ destination: e.target.value })}
+                placeholder="Країна / місто"
+                className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all"
+                style={{ border: "1px solid #E2E4DF", fontSize: 15 }}
+              />
             </div>
 
             <div className="flex flex-col gap-1" style={{ minWidth: 180 }}>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Дата</label>
               <div className="relative">
-                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-14 px-4 pr-10 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all w-full appearance-none" style={{ border: "1px solid #E2E4DF", fontSize: 15 }} />
+                <input
+                  type="date"
+                  value={filters.dateFrom}
+                  onChange={(e) => onFiltersChange({ dateFrom: e.target.value })}
+                  className="h-14 px-4 pr-10 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all w-full appearance-none"
+                  style={{ border: "1px solid #E2E4DF", fontSize: 15 }}
+                />
                 <svg className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                   <rect x="1" y="3" width="14" height="12" rx="2" />
                   <path d="M5 1v3M11 1v3M1 7h14" />
@@ -142,21 +410,23 @@ function Hero({ onSearch }: { onSearch: () => void }) {
 
             <div className="flex flex-col gap-1" style={{ minWidth: 160 }}>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Зірки готелю</label>
-              <select value={stars} onChange={(e) => setStars(e.target.value)} className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all appearance-none bg-white" style={{ border: "1px solid #E2E4DF", fontSize: 15 }}>
+              <select
+                value={filters.starsMin}
+                onChange={(e) => onFiltersChange({ starsMin: e.target.value })}
+                className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all appearance-none bg-white"
+                style={{ border: "1px solid #E2E4DF", fontSize: 15 }}
+              >
                 <option value="">Будь-які</option>
-                {[1, 2, 3, 4, 5].map((n) => (
+                {STAR_OPTIONS.map((n) => (
                   <option key={n} value={n}>{n} ★</option>
                 ))}
               </select>
             </div>
 
+
             <div className="flex flex-col gap-1" style={{ minWidth: 160 }}>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Кількість осіб</label>
-              <div className="flex items-center h-14 px-3 rounded-[10px] border gap-3" style={{ border: "1px solid #E2E4DF" }}>
-                <button onClick={() => setPeople(Math.max(1, people - 1))} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 font-bold transition-colors">−</button>
-                <span className="flex-1 text-center text-sm font-semibold">{people}</span>
-                <button onClick={() => setPeople(Math.min(10, people + 1))} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 font-bold transition-colors">+</button>
-              </div>
+              <Stepper value={filters.adults} onChange={(v) => onFiltersChange({ adults: v })} />
             </div>
 
             <div className="flex flex-col justify-end">
@@ -165,9 +435,187 @@ function Hero({ onSearch }: { onSearch: () => void }) {
               </button>
             </div>
           </div>
+
+          <button onClick={onOpenFilters} className="mt-3 text-sm font-medium transition-opacity hover:opacity-70" style={{ color: "#2F6FED" }}>
+            Розширений пошук →
+          </button>
         </div>
       </div>
     </section>
+  );
+}
+
+// ─── Advanced Filter Page ───────────────────────────────────────────────────────
+function AdvancedFilterPage({
+  filters,
+  onFiltersChange,
+  onReset,
+  onSubmit,
+  refs,
+}: {
+  filters: Filters;
+  onFiltersChange: (patch: Partial<Filters>) => void;
+  onReset: () => void;
+  onSubmit: () => void;
+  refs: RefLists;
+}) {
+  // Курорти/міста, звужені під обрану країну. Якщо країна ще не обрана —
+  // показуємо весь список як і раніше.
+  const visibleGoalCities = filters.countryId
+    ? refs.goalCities.filter((c) => c.countryId != null && String(c.countryId) === filters.countryId)
+    : refs.goalCities;
+
+  const handleCountryChange = (countryId: string) => {
+    const currentCity = refs.goalCities.find((c) => String(c.id) === filters.goalCityId);
+    const cityStillMatches = !currentCity || currentCity.countryId == null || String(currentCity.countryId) === countryId;
+    onFiltersChange({
+      countryId,
+      // Якщо обрана раніше курортна зона належить іншій країні — скидаємо її,
+      // щоб у формі не лишався невалідний вибір.
+      ...(cityStillMatches ? {} : { goalCityId: "" }),
+    });
+  };
+
+  const handleGoalCityChange = (goalCityId: string) => {
+    const city = refs.goalCities.find((c) => String(c.id) === goalCityId);
+    onFiltersChange({
+      goalCityId,
+      // Обрали курорт — одразу підставляємо його країну.
+      ...(city?.countryId != null ? { countryId: String(city.countryId) } : {}),
+    });
+  };
+
+  return (
+    <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16">
+      <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }} className="mb-6">
+        Розширений пошук
+      </h1>
+
+      <div style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16, padding: 32 }}>
+        <div className="grid gap-5 mb-5" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+          <Field label="Готель / напрямок">
+            <input
+              value={filters.destination}
+              onChange={(e) => onFiltersChange({ destination: e.target.value })}
+              placeholder="Назва готелю або країна"
+              className={fieldInputClass}
+              style={fieldInputStyle}
+            />
+          </Field>
+
+          <Field label="Країна">
+            <select value={filters.countryId} onChange={(e) => handleCountryChange(e.target.value)} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
+              <option value="">Будь-яка</option>
+              {refs.countries.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Місто вильоту">
+            <select value={filters.departureCityId} onChange={(e) => onFiltersChange({ departureCityId: e.target.value })} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
+              <option value="">Будь-яке</option>
+              {refs.departureCities.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Курорт / місто">
+            <select value={filters.goalCityId} onChange={(e) => handleGoalCityChange(e.target.value)} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
+              <option value="">Будь-який</option>
+              {visibleGoalCities.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Курортна зона">
+            <select value={filters.resort} onChange={(e) => onFiltersChange({ resort: e.target.value })} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
+              <option value="">Будь-яка</option>
+              {refs.resorts.map((r) => (
+                <option key={r.id} value={r.name}>{r.name}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Туроператор">
+            <select value={filters.tourOperatorId} onChange={(e) => onFiltersChange({ tourOperatorId: e.target.value })} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
+              <option value="">Будь-який</option>
+              {refs.operators.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Харчування">
+            <select value={filters.meal} onChange={(e) => onFiltersChange({ meal: e.target.value })} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
+              <option value="">Будь-яке</option>
+              {refs.mealTypes.map((m) => (
+                <option key={m.id} value={m.name}>{m.name}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+
+        <div className="grid gap-5 mb-5" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+          <Field label="Дата вильоту з">
+            <input type="date" value={filters.dateFrom} onChange={(e) => onFiltersChange({ dateFrom: e.target.value })} className={fieldInputClass} style={fieldInputStyle} />
+          </Field>
+          <Field label="Дата вильоту по">
+            <input type="date" value={filters.dateTo} onChange={(e) => onFiltersChange({ dateTo: e.target.value })} className={fieldInputClass} style={fieldInputStyle} />
+          </Field>
+          <Field label="Ночей від">
+            <input type="number" min={1} value={filters.nightsMin} onChange={(e) => onFiltersChange({ nightsMin: e.target.value })} placeholder="1" className={fieldInputClass} style={fieldInputStyle} />
+          </Field>
+          <Field label="Ночей до">
+            <input type="number" min={1} value={filters.nightsMax} onChange={(e) => onFiltersChange({ nightsMax: e.target.value })} placeholder="14" className={fieldInputClass} style={fieldInputStyle} />
+          </Field>
+        </div>
+
+        <div className="grid gap-5 mb-6" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+          <Field label="Ціна від">
+            <input type="number" min={0} value={filters.priceMin} onChange={(e) => onFiltersChange({ priceMin: e.target.value })} placeholder="0" className={fieldInputClass} style={fieldInputStyle} />
+          </Field>
+          <Field label="Ціна до">
+            <input type="number" min={0} value={filters.priceMax} onChange={(e) => onFiltersChange({ priceMax: e.target.value })} placeholder="2000" className={fieldInputClass} style={fieldInputStyle} />
+          </Field>
+          <Field label="Валюта">
+            <select value={filters.currency} onChange={(e) => onFiltersChange({ currency: e.target.value })} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
+              <option value="">Будь-яка</option>
+              {CURRENCY_OPTIONS.map((c) => (
+                <option key={c.symbol} value={c.symbol}>{c.label}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Зірки готелю">
+            <select value={filters.starsMin} onChange={(e) => onFiltersChange({ starsMin: e.target.value })} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
+              <option value="">Будь-які</option>
+              {STAR_OPTIONS.map((n) => (
+                <option key={n} value={n}>{n}★ і вище</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Кількість осіб">
+            <Stepper value={filters.adults} onChange={(v) => onFiltersChange({ adults: v })} />
+          </Field>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-6 mb-8">
+          <Checkbox checked={filters.children} onChange={(v) => onFiltersChange({ children: v })} label="Подорож із дітьми" />
+          <Checkbox checked={filters.hotOnly} onChange={(v) => onFiltersChange({ hotOnly: v })} label="Тільки гарячі тури 🔥" />
+        </div>
+
+        <div className="flex gap-3">
+          <button onClick={onSubmit} className="px-8 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90 active:scale-95" style={{ background: "#2F6FED", height: 52 }}>
+            Знайти тури
+          </button>
+          <button onClick={onReset} className="px-6 rounded-[10px] font-semibold text-sm transition-colors hover:bg-gray-50" style={{ border: "1px solid #E2E4DF", height: 52, color: "#1F2A24" }}>
+            Скинути фільтри
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -458,21 +906,54 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
 }
 
 // ─── Search Results Page ───────────────────────────────────────────────────────
-function SearchResultsPage({ tours, loading, onBook, onDetails }: { tours: Tour[]; loading: boolean; onBook: (t: Tour) => void; onDetails: (t: Tour) => void }) {
+function SearchResultsPage({
+  tours,
+  loading,
+  onBook,
+  onDetails,
+  chips,
+  onOpenFilters,
+}: {
+  tours: Tour[];
+  loading: boolean;
+  onBook: (t: Tour) => void;
+  onDetails: (t: Tour) => void;
+  chips: Chip[];
+  onOpenFilters: () => void;
+}) {
   const [page, setPage] = useState(1);
-  const chips = ["Туреччина ×", "10.09.2026 ×", "4★ ×", "2 особи ×"];
-  const [activeChips, setActiveChips] = useState(chips);
 
   return (
     <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16">
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
         <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }}>Результати пошуку</h1>
-        <div className="flex flex-wrap gap-2">
-          {activeChips.map((c) => (
-            <button key={c} onClick={() => setActiveChips(activeChips.filter((x) => x !== c))} className="flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-full transition-colors hover:bg-blue-50" style={{ border: "1px solid #2F6FED", color: "#2F6FED", height: 32 }}>{c}</button>
+        <button
+          onClick={onOpenFilters}
+          className="text-sm font-medium px-4 py-2 rounded-full transition-colors hover:bg-blue-50"
+          style={{ border: "1px solid #2F6FED", color: "#2F6FED" }}
+        >
+          Розширені параметри
+        </button>
+      </div>
+
+      {!loading && (
+        <p className="text-sm mb-4" style={{ color: "#66716B" }}>Знайдено турів: {tours.length}</p>
+      )}
+
+      {chips.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-6">
+          {chips.map((c) => (
+            <button
+              key={c.id}
+              onClick={c.onRemove}
+              className="flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-full transition-colors hover:bg-blue-50"
+              style={{ border: "1px solid #2F6FED", color: "#2F6FED", height: 32 }}
+            >
+              {c.label} ×
+            </button>
           ))}
         </div>
-      </div>
+      )}
 
       {loading && <p style={{ color: "#66716B" }}>Завантаження турів…</p>}
       {!loading && tours.length === 0 && <p style={{ color: "#66716B" }}>За вашим запитом нічого не знайдено.</p>}
@@ -494,11 +975,13 @@ function SearchResultsPage({ tours, loading, onBook, onDetails }: { tours: Tour[
         ))}
       </div>
 
-      <div className="flex items-center justify-center gap-2 mt-10">
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button key={n} onClick={() => setPage(n)} className="w-10 h-10 rounded-full text-sm font-semibold transition-all" style={{ background: page === n ? "#2F6FED" : "#fff", color: page === n ? "#fff" : "#1F2A24", border: "1px solid " + (page === n ? "#2F6FED" : "#E2E4DF") }}>{n}</button>
-        ))}
-      </div>
+      {tours.length > 0 && (
+        <div className="flex items-center justify-center gap-2 mt-10">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button key={n} onClick={() => setPage(n)} className="w-10 h-10 rounded-full text-sm font-semibold transition-all" style={{ background: page === n ? "#2F6FED" : "#fff", color: page === n ? "#fff" : "#1F2A24", border: "1px solid " + (page === n ? "#2F6FED" : "#E2E4DF") }}>{n}</button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -606,6 +1089,18 @@ export default function App() {
   const [toursLoading, setToursLoading] = useState(true);
   const [toursError, setToursError] = useState<string | null>(null);
 
+  // ── Filters live at the App level so Hero, the header, the advanced page,
+  // and the results-page chips all read/write the same single source of truth.
+  const [filters, setFiltersState] = useState<Filters>(EMPTY_FILTERS);
+  const setFilters = (patch: Partial<Filters>) => setFiltersState((prev) => ({ ...prev, ...patch }));
+
+  const [countries, setCountries] = useState<RefItem[]>([]);
+  const [departureCities, setDepartureCities] = useState<RefItem[]>([]);
+  const [goalCities, setGoalCities] = useState<RefItem[]>([]);
+  const [operators, setOperators] = useState<RefItem[]>([]);
+  const [resorts, setResorts] = useState<RefItem[]>([]);
+  const [mealTypes, setMealTypes] = useState<RefItem[]>([]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -623,6 +1118,47 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
+  // Довідники для селектів розширеного пошуку. Якщо якогось ендпоінта ще
+  // нема на бекенді — просто отримаємо порожній список, нічого не зламається.
+  useEffect(() => {
+    const load = async (url: string, setter: (v: RefItem[]) => void) => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(String(res.status));
+        const data = await res.json();
+        const list: any[] = Array.isArray(data) ? data : data.results ?? [];
+        // GoalCitySerializer додатково повертає "country" (id країни) — інші
+        // довідники це поле просто не мають, тоді countryId лишається null.
+        setter(list.map((item) => ({ id: item.id, name: item.name, countryId: item.country ?? null })));
+      } catch {
+        setter([]);
+      }
+    };
+    load(`${API_URL}/countries/`, setCountries);
+    load(`${API_URL}/departure-cities/`, setDepartureCities);
+    load(`${API_URL}/goal-cities/`, setGoalCities);
+    load(`${API_URL}/tour-operators/`, setOperators);
+    load(`${API_URL}/resorts/`, setResorts);
+
+    // Окремо: meal-types має іншу форму відповіді ({value, label}, не {id, name}),
+    // тому мапимо її під RefItem самостійно.
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/meal-types/`);
+        if (!res.ok) throw new Error(String(res.status));
+        const data: { value: string; label: string }[] = await res.json();
+        setMealTypes(data.map((m) => ({ id: m.value, name: m.label })));
+      } catch {
+        setMealTypes([]);
+      }
+    })();
+  }, []);
+
+  const refs: RefLists = { countries, departureCities, goalCities, operators, resorts, mealTypes };
+
+  const filteredTours = useMemo(() => applyFilters(tours, filters, refs), [tours, filters, countries, departureCities, goalCities, operators]);
+  const chips = useMemo(() => buildChips(filters, refs, setFilters), [filters, countries, departureCities, goalCities, operators]);
+
   const hotTours = tours.filter((t) => t.is_hot);
 
   const openBooking = (tour: Tour) => {
@@ -635,9 +1171,12 @@ export default function App() {
     setPage("tour");
   };
 
+  const openFilters = () => setPage("filters");
+  const runSearch = () => setPage("results");
+
   return (
     <div className="min-h-full flex flex-col" style={{ background: "#F7F8F6" }}>
-      <Header onProfile={() => setModal("profile")} onPage={setPage} />
+      <Header onProfile={() => setModal("profile")} onPage={setPage} onOpenFilters={openFilters} />
 
       {toursError && (
         <div className="max-w-[1200px] mx-auto px-6 mt-4 w-full">
@@ -648,7 +1187,7 @@ export default function App() {
       <main className="flex-1">
         {page === "home" && (
           <>
-            <Hero onSearch={() => setPage("results")} />
+            <Hero filters={filters} onFiltersChange={setFilters} onSearch={runSearch} onOpenFilters={openFilters} />
             <HotTours tours={hotTours} loading={toursLoading} onBook={openBooking} onDetails={openDetails} />
             <About />
           </>
@@ -657,7 +1196,16 @@ export default function App() {
           <TourDetailsPage tourId={selectedTour?.id ?? null} onBook={openBooking} />
         )}
         {page === "results" && (
-          <SearchResultsPage tours={tours} loading={toursLoading} onBook={openBooking} onDetails={openDetails} />
+          <SearchResultsPage tours={filteredTours} loading={toursLoading} onBook={openBooking} onDetails={openDetails} chips={chips} onOpenFilters={openFilters} />
+        )}
+        {page === "filters" && (
+          <AdvancedFilterPage
+            filters={filters}
+            onFiltersChange={setFilters}
+            onReset={() => setFiltersState(EMPTY_FILTERS)}
+            onSubmit={runSearch}
+            refs={refs}
+          />
         )}
       </main>
 
