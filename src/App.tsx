@@ -1,9 +1,20 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import type { ReactNode, CSSProperties } from "react";
+import type { ReactNode, CSSProperties, ChangeEvent } from "react";
 import heroPhoto from "@/imports/aerial-view-of-coastal-resort-with-interconnected-pools-near-mai-khao-beach.png";
+import { I18nProvider, useI18n, LOCALE, LANGS, LANG_LABEL } from "@/i18n";
+import type { TFunc, Lang } from "@/i18n";
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 const API_URL = (import.meta as any).env?.VITE_API_URL ?? "http://localhost:8000/api";
+// avatar — ImageField, тож бекенд віддає шлях/URL до файла (не саме зображення).
+// Якщо серіалізатор повертає відносний шлях ("/media/avatars/..."), домальовуємо
+// origin бекенду (без "/api"); якщо вже повертає абсолютний URL — лишаємо як є.
+const API_ORIGIN = API_URL.replace(/\/api\/?$/, "");
+function resolveMediaUrl(path?: string | null): string | null {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path) || path.startsWith("blob:")) return path;
+  return `${API_ORIGIN}${path.startsWith("/") ? "" : "/"}${path}`;
+}
 
 function getCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp("(^|;\\s*)" + name + "=([^;]*)"));
@@ -14,13 +25,17 @@ function getCookie(name: string): string | null {
 // cookie (credentials: "include") и CSRF-токеном, который Django кладёт в
 // cookie "csrftoken" после /auth/csrf/. Публичные GET (тури, довідники) можно
 // дергать обычным fetch — они не требуют CSRF.
+// Если options.body — FormData (аватар-файл), НЕ ставим Content-Type сами:
+// браузер сам подставит "multipart/form-data; boundary=...", иначе загрузка
+// файла на бекенд сломается.
 async function apiFetch(path: string, options: RequestInit = {}) {
   const csrfToken = getCookie("csrftoken");
+  const isFormData = options.body instanceof FormData;
   return fetch(`${API_URL}${path}`, {
     ...options,
     credentials: "include",
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(csrfToken ? { "X-CSRFToken": csrfToken } : {}),
       ...(options.headers || {}),
     },
@@ -28,13 +43,15 @@ async function apiFetch(path: string, options: RequestInit = {}) {
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Page = "home" | "tour" | "results" | "filters";
+type Page = "home" | "tour" | "results" | "filters" | "history";
 type Modal = null | "booking" | "profile";
 
 interface User {
   email: string;
   full_name: string;
   phone: string;
+  avatar?: string | null; // шлях/URL до файла з ImageField, або null/відсутній
+  is_staff: boolean;
 }
 
 interface Tour {
@@ -65,6 +82,19 @@ interface RefItem {
   id: number | string;
   name: string;
   countryId?: number | string | null;
+}
+
+interface BookingHistoryItem {
+  id: number;
+  tour: Tour | null;
+  status: string;
+  status_display: string;
+  preferred_contact: "viber" | "telegram";
+  preferred_date_from: string | null;
+  preferred_date_to: string | null;
+  adults_count: number;
+  children: boolean;
+  created_at: string;
 }
 
 // ─── Filters ────────────────────────────────────────────────────────────────
@@ -113,10 +143,10 @@ const EMPTY_FILTERS: Filters = {
 const STAR_OPTIONS = [3, 4, 5];
 
 const CURRENCY_OPTIONS = [
-  { symbol: "₴", label: "Гривня (₴)" },
-  { symbol: "$", label: "Долар ($)" },
-  { symbol: "€", label: "Євро (€)" },
-];
+  { symbol: "₴", labelKey: "currency.uah" },
+  { symbol: "$", labelKey: "currency.usd" },
+  { symbol: "€", labelKey: "currency.eur" },
+] as const;
 
 function parsePrice(price: string): number | null {
   const match = price.replace(/\s/g, "").match(/\d+([.,]\d+)?/);
@@ -198,41 +228,60 @@ interface Chip {
   onRemove: () => void;
 }
 
-function buildChips(f: Filters, refs: RefLists, onFiltersChange: (patch: Partial<Filters>) => void): Chip[] {
+// Реальний відгук з бекенду (Review: author_name, rating, text, created_at).
+// is_published тут не потрібен — API віддає лише опубліковані відгуки.
+interface Review {
+  id: number;
+  author_name: string;
+  rating: number;
+  text: string;
+  created_at: string;
+  tour_name?: string | null; // для закріплених відгуків на головній — з якого туру
+}
+
+function formatDate(iso: string, lang: Lang): string {
+  try {
+    return new Date(iso).toLocaleDateString(LOCALE[lang], { day: "numeric", month: "long", year: "numeric" });
+  } catch {
+    return iso;
+  }
+}
+
+function buildChips(f: Filters, refs: RefLists, onFiltersChange: (patch: Partial<Filters>) => void, t: TFunc): Chip[] {
   const chips: Chip[] = [];
   const clear = (patch: Partial<Filters>) => onFiltersChange(patch);
 
   if (f.destination) chips.push({ id: "destination", label: f.destination, onRemove: () => clear({ destination: "" }) });
   if (f.countryId) {
-    const name = refs.countries.find((c) => String(c.id) === f.countryId)?.name ?? "Країна";
+    const name = refs.countries.find((c) => String(c.id) === f.countryId)?.name ?? t("chip.country");
     chips.push({ id: "country", label: name, onRemove: () => clear({ countryId: "" }) });
   }
   if (f.departureCityId) {
-    const name = refs.departureCities.find((c) => String(c.id) === f.departureCityId)?.name ?? "Виліт";
-    chips.push({ id: "departureCity", label: `Виліт: ${name}`, onRemove: () => clear({ departureCityId: "" }) });
+    const name = refs.departureCities.find((c) => String(c.id) === f.departureCityId)?.name ?? t("chip.departure");
+    chips.push({ id: "departureCity", label: t("chip.departureWith", { name }), onRemove: () => clear({ departureCityId: "" }) });
   }
   if (f.goalCityId) {
-    const name = refs.goalCities.find((c) => String(c.id) === f.goalCityId)?.name ?? "Курорт";
+    const name = refs.goalCities.find((c) => String(c.id) === f.goalCityId)?.name ?? t("chip.goalCity");
     chips.push({ id: "goalCity", label: name, onRemove: () => clear({ goalCityId: "" }) });
   }
   if (f.tourOperatorId) {
-    const name = refs.operators.find((c) => String(c.id) === f.tourOperatorId)?.name ?? "Оператор";
+    const name = refs.operators.find((c) => String(c.id) === f.tourOperatorId)?.name ?? t("chip.operator");
     chips.push({ id: "operator", label: name, onRemove: () => clear({ tourOperatorId: "" }) });
   }
   if (f.resort) chips.push({ id: "resort", label: f.resort, onRemove: () => clear({ resort: "" }) });
   if (f.dateFrom || f.dateTo) {
     chips.push({
       id: "dates",
-      label: (f.dateFrom && f.dateTo ? `${f.dateFrom} – ${f.dateTo}` : f.dateFrom || f.dateTo) + " (для заявки)",
+      label: (f.dateFrom && f.dateTo ? `${f.dateFrom} – ${f.dateTo}` : f.dateFrom || f.dateTo) + t("chip.forRequest"),
       onRemove: () => clear({ dateFrom: "", dateTo: "" }),
     });
   }
-  if (f.starsMin) chips.push({ id: "stars", label: `${f.starsMin}★ і вище`, onRemove: () => clear({ starsMin: "" }) });
+  if (f.starsMin) chips.push({ id: "stars", label: t("chip.starsAndUp", { n: f.starsMin }), onRemove: () => clear({ starsMin: "" }) });
   if (f.meal) chips.push({ id: "meal", label: f.meal, onRemove: () => clear({ meal: "" }) });
   if (f.nightsMin || f.nightsMax) {
     chips.push({
       id: "nights",
-      label: `${f.nightsMin || "0"}–${f.nightsMax || "∞"} ночей`,
+      label: t("chip.nights", { from: f.nightsMin || "0", to: f.nightsMax || "∞" }),
       onRemove: () => clear({ nightsMin: "", nightsMax: "" }),
     });
   }
@@ -244,14 +293,15 @@ function buildChips(f: Filters, refs: RefLists, onFiltersChange: (patch: Partial
     });
   }
   if (f.currency) {
-    const label = CURRENCY_OPTIONS.find((c) => c.symbol === f.currency)?.label ?? f.currency;
+    const option = CURRENCY_OPTIONS.find((c) => c.symbol === f.currency);
+    const label = option ? t(option.labelKey) : f.currency;
     chips.push({ id: "currency", label, onRemove: () => clear({ currency: "" }) });
   }
   if (f.adults !== EMPTY_FILTERS.adults) {
-    chips.push({ id: "adults", label: `${f.adults} особи`, onRemove: () => clear({ adults: EMPTY_FILTERS.adults }) });
+    chips.push({ id: "adults", label: t("chip.adults", { n: f.adults }), onRemove: () => clear({ adults: EMPTY_FILTERS.adults }) });
   }
-  if (f.children) chips.push({ id: "children", label: "З дітьми", onRemove: () => clear({ children: false }) });
-  if (f.hotOnly) chips.push({ id: "hot", label: "Гарячі 🔥", onRemove: () => clear({ hotOnly: false }) });
+  if (f.children) chips.push({ id: "children", label: t("chip.children"), onRemove: () => clear({ children: false }) });
+  if (f.hotOnly) chips.push({ id: "hot", label: t("chip.hot"), onRemove: () => clear({ hotOnly: false }) });
 
   return chips;
 }
@@ -264,6 +314,28 @@ function Stars({ count, size = 16 }: { count: number; size?: number }) {
         <svg key={i} width={size} height={size} viewBox="0 0 16 16" fill={i < count ? "#FFB800" : "#E2E4DF"}>
           <path d="M8 1l1.854 3.756L14 5.528l-3 2.924.708 4.128L8 10.5l-3.708 2.08L5 8.452 2 5.528l4.146-.772z" />
         </svg>
+      ))}
+    </div>
+  );
+}
+
+// Клікабельні зірки для форми відгуку — на відміну від Stars (лише показ).
+function StarPicker({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="flex gap-1">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          type="button"
+          onClick={() => onChange(n)}
+          aria-label={t("review.starsAria", { n })}
+          className="transition-transform hover:scale-110"
+        >
+          <svg width="26" height="26" viewBox="0 0 16 16" fill={n <= value ? "#FFB800" : "#E2E4DF"}>
+            <path d="M8 1l1.854 3.756L14 5.528l-3 2.924.708 4.128L8 10.5l-3.708 2.08L5 8.452 2 5.528l4.146-.772z" />
+          </svg>
+        </button>
       ))}
     </div>
   );
@@ -317,64 +389,129 @@ function Header({
   onProfile,
   onPage,
   onOpenFilters,
+  onHistory,
   user,
 }: {
   onProfile: () => void;
   onPage: (p: Page) => void;
   onOpenFilters: () => void;
+  onHistory: () => void;
   user: User | null;
 }) {
+  const { t, lang, setLang } = useI18n();
   const [langOpen, setLangOpen] = useState(false);
-  const [lang, setLang] = useState("RU");
 
   return (
     <header style={{ background: "#1F7A53" }} className="w-full h-20 flex-shrink-0">
       <div className="max-w-[1200px] mx-auto px-6 h-full flex items-center justify-between">
         <button onClick={() => onPage("home")} className="flex items-center gap-3 group">
-          <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-            <path d="M18 4C10 4 4 10 4 18c0 3.5 1.2 6.7 3.2 9.2L18 32l10.8-4.8A14 14 0 0 0 32 18c0-7.7-6-14-14-14z" fill="none" stroke="#5CEAB2" strokeWidth="2.5" />
-            <path d="M10 22c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke="#5CEAB2" strokeWidth="2.5" strokeLinecap="round" />
+          <svg
+            width="64"
+            height="64"
+            viewBox="0 0 64 64"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-label={t("header.logoAlt")}
+          >
+
+            <path
+              d="M14 15
+                C7 21 5 32 8 42
+                C11 52 20 58 32 58
+                C44 58 53 52 56 42
+                C59 32 57 21 50 15
+                L44 20
+                C49 25 51 33 48 40
+                C46 47 40 51 32 51
+                C24 51 18 47 16 40
+                C13 33 15 25 20 20
+                Z"
+              fill="#16B8A6"/>
+
+
+            <circle cx="13" cy="29" r="2" fill="#F7F8F6"/>
+            <circle cx="15" cy="40" r="2" fill="#F7F8F6"/>
+            <circle cx="23" cy="51" r="2" fill="#F7F8F6"/>
+            <circle cx="41" cy="51" r="2" fill="#F7F8F6"/>
+            <circle cx="49" cy="40" r="2" fill="#F7F8F6"/>
+            <circle cx="51" cy="29" r="2" fill="#F7F8F6"/>
+
+
+            <path
+              d="M47 24 C49 20 51 17 54 14"
+              fill="none"
+              stroke="#39B54A"
+              stroke-width="2.5"
+              stroke-linecap="round"/>
+
+
+            <path
+              d="M54 14
+                C48 13 46 8 50 6
+                C53 4 56 6 57 9
+                C58 5 62 4 64 7
+                C66 11 62 14 59 15
+                C63 15 65 18 63 21
+                C60 24 57 20 56 18
+                C56 22 53 24 50 22
+                C47 20 49 16 52 15
+                Z"
+              fill="#39B54A"/>
           </svg>
-          <span style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 18 }} className="text-white leading-tight">
-            Вам повезло вибрати нас
+
+          <span style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 18 }} className="hidden sm:inline text-white leading-tight">
+            {t("header.brand")}
           </span>
         </button>
 
-        <nav className="flex items-center gap-6">
-          <button className="text-white/90 hover:text-white text-sm font-medium transition-colors" onClick={onOpenFilters}>
-            Розширений фільтр
+        <nav className="flex items-center gap-3 sm:gap-6">
+          <button className="hidden sm:inline text-white/90 hover:text-white text-sm font-medium transition-colors" onClick={onOpenFilters}>
+            {t("header.advancedFilter")}
           </button>
 
           <div className="relative">
-            <button onClick={() => setLangOpen(!langOpen)} className="flex items-center gap-1 bg-white/10 hover:bg-white/20 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
-              {lang}
+            <button onClick={() => setLangOpen(!langOpen)} aria-label={t("header.langAria")} className="flex items-center gap-1 bg-white/10 hover:bg-white/20 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
+              {LANG_LABEL[lang]}
               <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
                 <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
               </svg>
             </button>
             {langOpen && (
               <div className="absolute right-0 top-10 bg-white rounded-xl shadow-lg py-1 z-50 min-w-[80px]">
-                {["RU", "UA"].map((l) => (
-                  <button key={l} onClick={() => { setLang(l); setLangOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-gray-800 hover:bg-gray-50 font-medium">
-                    {l}
+                {LANGS.map((l) => (
+                  <button
+                    key={l}
+                    onClick={() => { setLang(l); setLangOpen(false); }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 font-medium rounded-tl-xl rounded-tr-xl rounded-bl-xl rounded-br-xl transition-colors"
+                    style={{ color: l === lang ? "#2F6FED" : "#1F2A24" }}
+                  >
+                    {LANG_LABEL[l]}
                   </button>
                 ))}
               </div>
             )}
           </div>
 
-          <button className="text-white/80 hover:text-white transition-colors" title="Історія">
+          <button onClick={onHistory} className="text-white/80 hover:text-white transition-colors" title={t("header.history")}>
             <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
               <circle cx="11" cy="11" r="9" />
               <path d="M11 6v5l3 3" />
             </svg>
           </button>
 
-          <button onClick={onProfile} className="relative text-white/80 hover:text-white transition-colors" title={user ? user.full_name || user.email : "Увійти / Зареєструватися"}>
-            <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <circle cx="11" cy="8" r="4" />
-              <path d="M3 20c0-4.4 3.6-8 8-8s8 3.6 8 8" />
-            </svg>
+          <button onClick={onProfile} className="relative flex items-center justify-center transition-colors" title={user ? user.full_name || user.email : t("header.loginRegister")} style={{ width: 24, height: 24 }}>
+            {user?.avatar ? (
+              <img
+                src={resolveMediaUrl(user.avatar) ?? undefined}
+                alt=""
+                className="rounded-full object-cover"
+                style={{ width: 24, height: 24 }}
+              />
+            ) : (
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="text-white/80 hover:text-white transition-colors">
+                <circle cx="11" cy="8" r="4" />
+                <path d="M3 20c0-4.4 3.6-8 8-8s8 3.6 8 8" />
+              </svg>
+            )}
             {user && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full" style={{ background: "#5CEAB2" }} />}
           </button>
         </nav>
@@ -395,55 +532,55 @@ function Hero({
   onSearch: () => void;
   onOpenFilters: () => void;
 }) {
+  const { t } = useI18n();
   return (
-    <section className="relative w-full" style={{ height: 480 }}>
+    <section
+      className="relative w-full flex flex-col items-center justify-center px-4" style={{ minHeight: 480 }}>
       <img src={heroPhoto} alt="Coastal resort aerial view" className="absolute inset-0 w-full h-full object-cover" />
       <div className="absolute inset-0" style={{ background: "rgba(15,30,20,0.45)" }} />
 
-      <div className="relative z-10 h-full flex flex-col items-center justify-center px-4">
-        <h1 style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: 42, color: "#fff", textShadow: "0 2px 12px rgba(0,0,0,0.4)" }} className="mb-8 text-center leading-tight">
-          Знайдіть свій ідеальний відпочинок
+      <div className="relative z-10 flex flex-col items-center w-full">
+        <h1
+          style={{ fontFamily: "Fraunces, serif", fontWeight: 700, color: "#fff", textShadow: "0 2px 12px rgba(0,0,0,0.4)" }}
+          className="mb-8 text-center leading-tight text-3xl sm:text-4xl md:text-[42px]">
+          {t("hero.title")}
         </h1>
 
         <div className="w-full" style={{ maxWidth: 1040, background: "rgba(255,255,255,0.97)", borderRadius: 20, padding: "28px 32px", boxShadow: "0 8px 40px rgba(0,0,0,0.22)", border: "1px solid #E2E4DF" }}>
-          <div className="flex gap-4 flex-wrap">
+          <div className="flex flex-col sm:flex-row gap-4 sm:flex-wrap">
             <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Куди</label>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("hero.where")}</label>
               <input
                 value={filters.destination}
                 onChange={(e) => onFiltersChange({ destination: e.target.value })}
-                placeholder="Країна / місто"
+                placeholder={t("hero.wherePlaceholder")}
                 className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all"
                 style={{ border: "1px solid #E2E4DF", fontSize: 15 }}
               />
             </div>
 
             <div className="flex flex-col gap-1" style={{ minWidth: 180 }}>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Дата (для заявки)</label>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("hero.date")}</label>
               <div className="relative">
                 <input
                   type="date"
                   value={filters.dateFrom}
                   onChange={(e) => onFiltersChange({ dateFrom: e.target.value })}
-                  className="h-14 px-4 pr-10 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all w-full appearance-none"
+                  className="h-14 px-4 pr-5 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all w-full appearance-none"
                   style={{ border: "1px solid #E2E4DF", fontSize: 15 }}
                 />
-                <svg className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <rect x="1" y="3" width="14" height="12" rx="2" />
-                  <path d="M5 1v3M11 1v3M1 7h14" />
-                </svg>
               </div>
             </div>
 
             <div className="flex flex-col gap-1" style={{ minWidth: 160 }}>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Зірки готелю</label>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("hero.stars")}</label>
               <select
                 value={filters.starsMin}
                 onChange={(e) => onFiltersChange({ starsMin: e.target.value })}
                 className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all appearance-none bg-white"
                 style={{ border: "1px solid #E2E4DF", fontSize: 15 }}
               >
-                <option value="">Будь-які</option>
+                <option value="">{t("common.any.pl")}</option>
                 {STAR_OPTIONS.map((n) => (
                   <option key={n} value={n}>{n} ★</option>
                 ))}
@@ -451,19 +588,19 @@ function Hero({
             </div>
 
             <div className="flex flex-col gap-1" style={{ minWidth: 160 }}>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Кількість осіб</label>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("hero.people")}</label>
               <Stepper value={filters.adults} onChange={(v) => onFiltersChange({ adults: v })} />
             </div>
 
             <div className="flex flex-col justify-end">
-              <button onClick={onSearch} className="h-14 px-8 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90 active:scale-95" style={{ background: "#2F6FED", minWidth: 140 }}>
-                Пошук
+              <button onClick={onSearch} className="h-14 px-8 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90 active:scale-95 w-full sm:w-auto" style={{ background: "#2F6FED", minWidth: 140 }}>
+                {t("hero.search")}
               </button>
             </div>
           </div>
 
           <button onClick={onOpenFilters} className="mt-3 text-sm font-medium transition-opacity hover:opacity-70" style={{ color: "#2F6FED" }}>
-            Розширений пошук →
+            {t("hero.advancedSearch")}
           </button>
         </div>
       </div>
@@ -485,6 +622,7 @@ function AdvancedFilterPage({
   onSubmit: () => void;
   refs: RefLists;
 }) {
+  const { t } = useI18n();
   const visibleGoalCities = filters.countryId
     ? refs.goalCities.filter((c) => c.countryId != null && String(c.countryId) === filters.countryId)
     : refs.goalCities;
@@ -533,69 +671,69 @@ function AdvancedFilterPage({
   return (
     <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16">
       <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }} className="mb-6">
-        Розширений пошук
+        {t("filters.title")}
       </h1>
 
-      <div style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16, padding: 32 }}>
-        <div className="grid gap-5 mb-5" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
-          <Field label="Готель / напрямок">
+      <div className="p-5 sm:p-8" style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16 }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
+          <Field label={t("filters.destination")}>
             <input
               value={filters.destination}
               onChange={(e) => onFiltersChange({ destination: e.target.value })}
-              placeholder="Назва готелю або країна"
+              placeholder={t("filters.destinationPlaceholder")}
               className={fieldInputClass}
               style={fieldInputStyle}
             />
           </Field>
 
-          <Field label="Країна">
+          <Field label={t("filters.country")}>
             <select value={filters.countryId} onChange={(e) => handleCountryChange(e.target.value)} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
-              <option value="">Будь-яка</option>
+              <option value="">{t("common.any.f")}</option>
               {refs.countries.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </Field>
 
-          <Field label="Місто вильоту">
+          <Field label={t("filters.departureCity")}>
             <select value={filters.departureCityId} onChange={(e) => onFiltersChange({ departureCityId: e.target.value })} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
-              <option value="">Будь-яке</option>
+              <option value="">{t("common.any.n")}</option>
               {refs.departureCities.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </Field>
 
-          <Field label="Курорт / місто">
+          <Field label={t("filters.goalCity")}>
             <select value={filters.goalCityId} onChange={(e) => handleGoalCityChange(e.target.value)} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
-              <option value="">Будь-який</option>
+              <option value="">{t("common.any.m")}</option>
               {visibleGoalCities.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </Field>
 
-          <Field label="Курортна зона">
+          <Field label={t("filters.resort")}>
             <select value={filters.resort} onChange={(e) => onFiltersChange({ resort: e.target.value })} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
-              <option value="">Будь-яка</option>
+              <option value="">{t("common.any.f")}</option>
               {refs.resorts.map((r) => (
                 <option key={r.id} value={r.name}>{r.name}</option>
               ))}
             </select>
           </Field>
 
-          <Field label="Туроператор">
+          <Field label={t("filters.operator")}>
             <select value={filters.tourOperatorId} onChange={(e) => onFiltersChange({ tourOperatorId: e.target.value })} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
-              <option value="">Будь-який</option>
+              <option value="">{t("common.any.m")}</option>
               {refs.operators.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </Field>
 
-          <Field label="Харчування">
+          <Field label={t("filters.meal")}>
             <select value={filters.meal} onChange={(e) => onFiltersChange({ meal: e.target.value })} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
-              <option value="">Будь-яке</option>
+              <option value="">{t("common.any.n")}</option>
               {refs.mealTypes.map((m) => (
                 <option key={m.id} value={m.name}>{m.name}</option>
               ))}
@@ -603,61 +741,61 @@ function AdvancedFilterPage({
           </Field>
         </div>
 
-        <div className="grid gap-5 mb-5" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
-          <Field label="Дата вильоту з (для заявки)">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5 mb-6">
+          <Field label={t("filters.dateFrom")}>
             <input type="date" value={filters.dateFrom} onChange={(e) => handleDateFromChange(e.target.value)} className={fieldInputClass} style={fieldInputStyle} />
           </Field>
-          <Field label="Дата вильоту по (для заявки)">
+          <Field label={t("filters.dateTo")}>
             <input type="date" value={filters.dateTo} onChange={(e) => onFiltersChange({ dateTo: e.target.value })} className={fieldInputClass} style={fieldInputStyle} />
-            <span className="text-[11px]" style={{ color: "#66716B" }}>Рахується автоматично за кількістю ночей — можна поправити вручну</span>
+            <span className="text-[11px]" style={{ color: "#66716B" }}>{t("filters.dateToHint")}</span>
           </Field>
-          <Field label="Ночей від">
+          <Field label={t("filters.nightsFrom")}>
             <input type="number" min={1} value={filters.nightsMin} onChange={(e) => handleNightsMinChange(e.target.value)} placeholder="1" className={fieldInputClass} style={fieldInputStyle} />
           </Field>
-          <Field label="Ночей до">
+          <Field label={t("filters.nightsTo")}>
             <input type="number" min={1} value={filters.nightsMax} onChange={(e) => handleNightsMaxChange(e.target.value)} placeholder="14" className={fieldInputClass} style={fieldInputStyle} />
           </Field>
         </div>
 
-        <div className="grid gap-5 mb-6" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
-          <Field label="Ціна від">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5 mb-6">
+          <Field label={t("filters.priceFrom")}>
             <input type="number" min={0} value={filters.priceMin} onChange={(e) => onFiltersChange({ priceMin: e.target.value })} placeholder="0" className={fieldInputClass} style={fieldInputStyle} />
           </Field>
-          <Field label="Ціна до">
+          <Field label={t("filters.priceTo")}>
             <input type="number" min={0} value={filters.priceMax} onChange={(e) => onFiltersChange({ priceMax: e.target.value })} placeholder="2000" className={fieldInputClass} style={fieldInputStyle} />
           </Field>
-          <Field label="Валюта">
+          <Field label={t("filters.currency")}>
             <select value={filters.currency} onChange={(e) => onFiltersChange({ currency: e.target.value })} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
-              <option value="">Будь-яка</option>
+              <option value="">{t("common.any.f")}</option>
               {CURRENCY_OPTIONS.map((c) => (
-                <option key={c.symbol} value={c.symbol}>{c.label}</option>
+                <option key={c.symbol} value={c.symbol}>{t(c.labelKey)}</option>
               ))}
             </select>
           </Field>
-          <Field label="Зірки готелю">
+          <Field label={t("filters.stars")}>
             <select value={filters.starsMin} onChange={(e) => onFiltersChange({ starsMin: e.target.value })} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
-              <option value="">Будь-які</option>
+              <option value="">{t("common.any.pl")}</option>
               {STAR_OPTIONS.map((n) => (
-                <option key={n} value={n}>{n}★ і вище</option>
+                <option key={n} value={n}>{t("filters.starsAndUp", { n })}</option>
               ))}
             </select>
           </Field>
-          <Field label="Кількість осіб">
+          <Field label={t("filters.people")}>
             <Stepper value={filters.adults} onChange={(v) => onFiltersChange({ adults: v })} />
           </Field>
         </div>
 
         <div className="flex flex-wrap items-center gap-6 mb-8">
-          <Checkbox checked={filters.children} onChange={(v) => onFiltersChange({ children: v })} label="Подорож із дітьми" />
-          <Checkbox checked={filters.hotOnly} onChange={(v) => onFiltersChange({ hotOnly: v })} label="Тільки гарячі тури 🔥" />
+          <Checkbox checked={filters.children} onChange={(v) => onFiltersChange({ children: v })} label={t("filters.withChildren")} />
+          <Checkbox checked={filters.hotOnly} onChange={(v) => onFiltersChange({ hotOnly: v })} label={t("filters.hotOnly")} />
         </div>
 
         <div className="flex gap-3">
           <button onClick={onSubmit} className="px-8 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90 active:scale-95" style={{ background: "#2F6FED", height: 52 }}>
-            Знайти тури
+            {t("filters.submit")}
           </button>
           <button onClick={onReset} className="px-6 rounded-[10px] font-semibold text-sm transition-colors hover:bg-gray-50" style={{ border: "1px solid #E2E4DF", height: 52, color: "#1F2A24" }}>
-            Скинути фільтри
+            {t("filters.reset")}
           </button>
         </div>
       </div>
@@ -667,6 +805,7 @@ function AdvancedFilterPage({
 
 // ─── Tour Card ─────────────────────────────────────────────────────────────────
 function TourCard({ tour, onBook, onDetails }: { tour: Tour; onBook: (t: Tour) => void; onDetails: (t: Tour) => void }) {
+  const { t } = useI18n();
   return (
     <div
       onClick={() => onDetails(tour)}
@@ -679,11 +818,81 @@ function TourCard({ tour, onBook, onDetails }: { tour: Tour; onBook: (t: Tour) =
       <div className="p-5">
         <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 18, fontWeight: 700, lineHeight: 1.3 }} className="mb-2 line-clamp-2">{tour.name}</h3>
         <Stars count={tour.stars} />
-        <p className="mt-2 text-sm" style={{ color: "#66716B" }}>{tour.nights} ночей · {tour.country} · {tour.meal}</p>
+        <p className="mt-2 text-sm" style={{ color: "#66716B" }}>{t("common.tourMeta", { nights: tour.nights, country: tour.country, meal: tour.meal })}</p>
         <p style={{ fontFamily: "Fraunces, serif", fontSize: 22, fontWeight: 700, color: "#1F7A53" }} className="mt-3">{tour.price}</p>
         <button onClick={(e) => { e.stopPropagation(); onBook(tour); }} className="mt-4 w-full h-12 rounded-[10px] text-white font-semibold text-sm transition-all hover:opacity-90" style={{ background: "#2F6FED" }}>
-          Забронювати
+          {t("common.book")}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Booking History Page ─────────────────────────────────────────────────────
+
+function HistoryPage({ onDetails }: { onDetails: (t: Tour) => void }) {
+  const { t, lang } = useI18n();
+  const [items, setItems] = useState<BookingHistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch("/booking-requests/mine/");
+        if (res.ok) setItems(await res.json());
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16">
+        <p style={{ color: "#66716B" }}>{t("history.loading")}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16">
+      <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }} className="mb-6">
+        {t("history.title")}
+      </h1>
+      {items.length === 0 && <p style={{ color: "#66716B" }}>{t("history.empty")}</p>}
+      <div className="space-y-4">
+        {items.map((b) => (
+          <div
+            key={b.id}
+            onClick={() => b.tour && onDetails(b.tour)}
+            className={(b.tour ? "cursor-pointer " : "") + "flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4"}
+            style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16, padding: 16 }}
+          >
+            <div className="flex items-center gap-3 sm:contents">
+              {b.tour && (
+                <img
+                  src={b.tour.img}
+                  alt={b.tour.name}
+                  className="w-16 h-16 sm:w-[100px] sm:h-[76px] object-cover rounded-[10px] flex-shrink-0"
+                />
+              )}
+              <div className="flex-1">
+                <p style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: 16 }}>
+                  {b.tour ? b.tour.name : t("history.tourDeleted")}
+                </p>
+                <p className="text-sm" style={{ color: "#66716B" }}>
+                  {new Date(b.created_at).toLocaleDateString(LOCALE[lang])} · {b.preferred_contact === "viber" ? "Viber" : "Telegram"}
+                </p>
+              </div>
+            </div>
+            <span
+              className="self-start sm:self-auto"
+              style={{ fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 8, background: "#F7F8F6", color: "#1F2A24" }}
+            >
+              {b.status_display}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -691,13 +900,14 @@ function TourCard({ tour, onBook, onDetails }: { tour: Tour; onBook: (t: Tour) =
 
 // ─── Hot Tours ─────────────────────────────────────────────────────────────────
 function HotTours({ tours, loading, onBook, onDetails }: { tours: Tour[]; loading: boolean; onBook: (t: Tour) => void; onDetails: (t: Tour) => void }) {
+  const { t } = useI18n();
   const rowRef = useRef<HTMLDivElement>(null);
   const scroll = (dir: number) => rowRef.current?.scrollBy({ left: dir * 306, behavior: "smooth" });
 
   return (
     <section className="max-w-[1200px] mx-auto px-6 mt-14 pb-16">
       <div className="flex items-center justify-between mb-6">
-        <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }}>Гарячі тури</h2>
+        <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }}>{t("hot.title")}</h2>
         <div className="flex gap-2">
           {["‹", "›"].map((ch, i) => (
             <button key={ch} onClick={() => scroll(i === 0 ? -1 : 1)} className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold transition-all hover:bg-gray-100" style={{ border: "1px solid #E2E4DF", color: "#1F2A24" }}>
@@ -706,8 +916,8 @@ function HotTours({ tours, loading, onBook, onDetails }: { tours: Tour[]; loadin
           ))}
         </div>
       </div>
-      {loading && <p style={{ color: "#66716B" }}>Завантаження турів…</p>}
-      {!loading && tours.length === 0 && <p style={{ color: "#66716B" }}>Гарячих турів поки немає.</p>}
+      {loading && <p style={{ color: "#66716B" }}>{t("common.loadingTours")}</p>}
+      {!loading && tours.length === 0 && <p style={{ color: "#66716B" }}>{t("hot.empty")}</p>}
       <div ref={rowRef} className="flex gap-6 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
         {tours.map((t) => (
           <TourCard key={t.id} tour={t} onBook={onBook} onDetails={onDetails} />
@@ -718,37 +928,38 @@ function HotTours({ tours, loading, onBook, onDetails }: { tours: Tour[]; loadin
 }
 
 // ─── About ─────────────────────────────────────────────────────────────────────
-function About() {
+function About({ pinnedReviews, pinnedReviewsLoading }: { pinnedReviews: Review[]; pinnedReviewsLoading: boolean }) {
+  const { t } = useI18n();
   return (
     <section className="max-w-[1200px] mx-auto px-6 py-16">
-      <div className="grid gap-16" style={{ gridTemplateColumns: "1fr 440px" }}>
+      <div className="grid gap-10 md:gap-16 grid-cols-1 md:grid-cols-[1fr_440px]">
         <div>
-          <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }} className="mb-6">Про турагента</h2>
+          <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }} className="mb-6">{t("about.title")}</h2>
           <div className="space-y-4 text-base leading-7" style={{ color: "#1F2A24", lineHeight: "26px" }}>
-            <p>Ми — команда досвідчених фахівців із туристичного бізнесу з понад 12-річним досвідом роботи на ринку. Щороку ми допомагаємо тисячам сімей та пар здійснити мрію про ідеальну відпустку.</p>
-            <p>Наш підхід простий: глибоке знання напрямків, чесні ціни та особистий супровід на кожному етапі — від вибору готелю до повернення додому.</p>
-            <p>Ми співпрацюємо лише з перевіреними операторами та готелями, щоб ваша подорож була безтурботною та незабутньою.</p>
+            <p>{t("about.p1")}</p>
+            <p>{t("about.p2")}</p>
+            <p>{t("about.p3")}</p>
           </div>
-          <a href="viber://chat" className="inline-flex items-center gap-2 mt-6 font-semibold text-sm transition-opacity hover:opacity-80" style={{ color: "#2F6FED" }}>
+          <a href="https://invite.viber.com/?g2=AQAhZKmWY3FWs1PKlcTVAB%2BQb3duaaxB%2B7RLFCMyfS4NB5iCuwm4i6QGCsD1DRtn" className="inline-flex items-center gap-2 mt-6 font-semibold text-sm transition-opacity hover:opacity-80" style={{ color: "#2F6FED" }}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="#7360F2">
               <rect width="18" height="18" rx="5" fill="#7360F2" />
               <path d="M9 3C5.7 3 3 5.5 3 8.6c0 1.8.9 3.4 2.3 4.4V15l1.8-1c.6.2 1.2.3 1.9.3 3.3 0 6-2.5 6-5.6S12.3 3 9 3z" fill="white" />
             </svg>
-            Написати нам у Viber
+            {t("about.viber")}
           </a>
         </div>
         <div className="space-y-3">
-          {[
-            { name: "Олена Мороз", text: "Відпочинок у Туреччині вийшов просто чудовим! Менеджер врахував усі наші побажання." },
-            { name: "Дмитро Коваль", text: "Вже четвертий рік поспіль бронюємо через це агентство. Завжди якісно і без сюрпризів." },
-            { name: "Аліна Шевченко", text: "Організували тур для компанії 8 осіб. Все пройшло ідеально, дякуємо!" },
-          ].map((r) => (
-            <div key={r.name} className="p-5" style={{ background: "#fff", borderRadius: 12, border: "1px solid #E2E4DF", boxShadow: "0 2px 8px rgba(31,42,36,0.04)" }}>
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-sm">{r.name}</span>
-                <Stars count={5} size={13} />
+          {pinnedReviewsLoading && <p style={{ color: "#66716B" }}>{t("common.loadingReviews")}</p>}
+          {!pinnedReviewsLoading && pinnedReviews.length === 0 && (
+            <p style={{ color: "#66716B" }}>{t("about.reviewsEmpty")}</p>
+          )}
+          {pinnedReviews.map((r) => (
+            <div key={r.id} className="p-5 overflow-hidden" style={{ background: "#fff", borderRadius: 12, border: "1px solid #E2E4DF", boxShadow: "0 2px 8px rgba(31,42,36,0.04)" }}>
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <span className="font-semibold text-sm break-words">{r.author_name}</span>
+                <Stars count={r.rating} size={13} />
               </div>
-              <p className="text-sm leading-6" style={{ color: "#66716B" }}>{r.text}</p>
+              <p className="text-sm leading-6 break-words" style={{ color: "#66716B", overflowWrap: "anywhere" }}>{r.text}</p>
             </div>
           ))}
         </div>
@@ -759,22 +970,71 @@ function About() {
 
 // ─── Footer ───────────────────────────────────────────────────────────────────
 function Footer() {
+  const { t } = useI18n();
   return (
     <footer style={{ background: "#1F7A53" }} className="w-full">
       <div className="max-w-[1200px] mx-auto px-6 py-12">
-        <div className="grid grid-cols-3 gap-8 text-white">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 text-white">
           <div>
-            <div className="flex items-center gap-2 mb-3">
-              <svg width="30" height="30" viewBox="0 0 36 36" fill="none">
-                <path d="M18 4C10 4 4 10 4 18c0 3.5 1.2 6.7 3.2 9.2L18 32l10.8-4.8A14 14 0 0 0 32 18c0-7.7-6-14-14-14z" fill="none" stroke="#5CEAB2" strokeWidth="2.5" />
-                <path d="M10 22c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke="#5CEAB2" strokeWidth="2.5" strokeLinecap="round" />
+            <div className="mt-8 pt-5 flex flex-col sm:flex-row items-center sm: gap-2 text-xs" style={{ borderTop: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.6)" }}>
+              <svg
+                width="64"
+                height="64"
+                viewBox="0 0 64 64"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-label={t("header.logoAlt")}
+              >
+
+                <path
+                  d="M14 15
+                    C7 21 5 32 8 42
+                    C11 52 20 58 32 58
+                    C44 58 53 52 56 42
+                    C59 32 57 21 50 15
+                    L44 20
+                    C49 25 51 33 48 40
+                    C46 47 40 51 32 51
+                    C24 51 18 47 16 40
+                    C13 33 15 25 20 20
+                    Z"
+                  fill="#16B8A6"/>
+
+
+                <circle cx="13" cy="29" r="2" fill="#F7F8F6"/>
+                <circle cx="15" cy="40" r="2" fill="#F7F8F6"/>
+                <circle cx="23" cy="51" r="2" fill="#F7F8F6"/>
+                <circle cx="41" cy="51" r="2" fill="#F7F8F6"/>
+                <circle cx="49" cy="40" r="2" fill="#F7F8F6"/>
+                <circle cx="51" cy="29" r="2" fill="#F7F8F6"/>
+
+
+                <path
+                  d="M47 24 C49 20 51 17 54 14"
+                  fill="none"
+                  stroke="#39B54A"
+                  stroke-width="2.5"
+                  stroke-linecap="round"/>
+
+
+                <path
+                  d="M54 14
+                    C48 13 46 8 50 6
+                    C53 4 56 6 57 9
+                    C58 5 62 4 64 7
+                    C66 11 62 14 59 15
+                    C63 15 65 18 63 21
+                    C60 24 57 20 56 18
+                    C56 22 53 24 50 22
+                    C47 20 49 16 52 15
+                    Z"
+                  fill="#39B54A"/>
               </svg>
-              <span style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 16 }}>Вам повезло вибрати нас</span>
+              <span style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 16 }}>{t("footer.brand")}</span>
             </div>
-            <p className="text-sm leading-6 text-white/70">Ваш надійний партнер у світі подорожей. Організовуємо незабутній відпочинок з 2012 року.</p>
+            <p className="text-sm leading-6 text-white/70">{t("footer.tagline")}</p>
           </div>
           <div>
-            <h4 className="font-semibold mb-4">Контакти</h4>
+            <h4 className="font-semibold mb-4">{t("footer.contacts")}</h4>
             <div className="space-y-2 text-sm text-white/80">
               <a href="tel:+380441234567" className="block hover:text-white transition-colors">+38 (044) 123-45-67</a>
               <a href="tel:+380671234567" className="block hover:text-white transition-colors">+38 (067) 123-45-67</a>
@@ -782,7 +1042,7 @@ function Footer() {
             </div>
           </div>
           <div>
-            <h4 className="font-semibold mb-4">Ми в соцмережах</h4>
+            <h4 className="font-semibold mb-4">{t("footer.social")}</h4>
             <div className="flex gap-3">
               {["Instagram", "Facebook", "Telegram", "Viber"].map((s) => (
                 <a key={s} href="#" className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-xs font-bold transition-colors" title={s}>{s[0]}</a>
@@ -791,8 +1051,8 @@ function Footer() {
           </div>
         </div>
         <div className="mt-8 pt-5 flex items-center justify-between text-xs" style={{ borderTop: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.6)" }}>
-          <span>© 2026 Турагентство «Вам повезло». Всі права захищені.</span>
-          <span>Розроблено з ♥ для мандрівників</span>
+          <span>{t("footer.copyright")}</span>
+          <span>{t("footer.made")}</span>
         </div>
       </div>
     </footer>
@@ -814,6 +1074,7 @@ function BookingModal({
   partyChildren: boolean;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [success, setSuccess] = useState(false);
   const [email, setEmail] = useState(user?.email ?? "");
   const [phone, setPhone] = useState(user?.phone ?? "");
@@ -837,7 +1098,7 @@ function BookingModal({
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const res = await fetch(`${API_URL}/booking-requests/`, {
+      const res = await apiFetch("/booking-requests/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -854,33 +1115,33 @@ function BookingModal({
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSuccess(true);
     } catch {
-      setSubmitError("Не вдалося відправити заявку. Спробуйте ще раз.");
+      setSubmitError(t("booking.error"));
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(15,25,20,0.55)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto py-8" style={{ background: "rgba(15,25,20,0.55)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <img src={heroPhoto} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ filter: "blur(4px) brightness(0.35)", transform: "scale(1.05)" }} />
 
-      <div className="relative z-10 w-full" style={{ maxWidth: 520, background: "#fff", borderRadius: 20, padding: 32, boxShadow: "0 16px 48px rgba(31,42,36,0.18)", margin: "0 16px" }}>
+      <div className="relative z-10 w-full max-h-[85vh] overflow-y-auto" style={{ maxWidth: 520, background: "#fff", borderRadius: 20, padding: 32, boxShadow: "0 16px 48px rgba(31,42,36,0.18)", margin: "0 16px" }}>
         {!success ? (
           <>
             <div className="flex items-center justify-between mb-6">
-              <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }}>Заявка на тур</h2>
+              <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }}>{t("booking.title")}</h2>
               <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 text-xl transition-colors">×</button>
             </div>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Тур</label>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("booking.tour")}</label>
                 <div className="h-13 px-4 flex items-center rounded-[10px] text-sm font-medium" style={{ background: "#F7F8F6", border: "1px solid #E2E4DF", height: 52 }}>{tourName}</div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Дата вильоту</label>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("booking.departureDate")}</label>
                   <input
                     type="date"
                     value={departureDate}
@@ -891,41 +1152,41 @@ function BookingModal({
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                    Дата повернення{tourNights != null ? ` (${tourNights} ноч.)` : ""}
+                    {tourNights != null ? t("booking.returnDateNights", { n: tourNights }) : t("booking.returnDate")}
                   </label>
                   <div className="h-13 px-4 flex items-center rounded-[10px] text-sm font-medium" style={{ background: "#F7F8F6", border: "1px solid #E2E4DF", height: 52 }}>
-                    {returnDate || "оберіть дату вильоту"}
+                    {returnDate || t("booking.pickDeparture")}
                   </div>
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                  Email {!email.trim() && <span style={{ color: "#D64545" }}>*</span>}
+                  {t("common.email")} {!email.trim() && <span style={{ color: "#D64545" }}>*</span>}
                 </label>
-                <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Введіть email" className="w-full h-13 px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
+                <input value={email} onChange={e => setEmail(e.target.value)} placeholder={t("booking.emailPlaceholder")} className="w-full h-13 px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                  Телефон {!phone.trim() && <span style={{ color: "#D64545" }}>*</span>}
+                  {t("common.phone")} {!phone.trim() && <span style={{ color: "#D64545" }}>*</span>}
                 </label>
                 <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+380..." className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                  Ім'я {!name.trim() && <span style={{ color: "#D64545" }}>*</span>}
+                  {t("common.name")} {!name.trim() && <span style={{ color: "#D64545" }}>*</span>}
                 </label>
-                <input value={name} onChange={e => setName(e.target.value)} placeholder="Введіть ім'я" className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
+                <input value={name} onChange={e => setName(e.target.value)} placeholder={t("booking.namePlaceholder")} className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
               </div>
             </div>
 
             {missingFields && !submitting && (
-              <p className="mt-3 text-xs" style={{ color: "#66716B" }}>Заповніть email, телефон та ім'я, щоб продовжити.</p>
+              <p className="mt-3 text-xs" style={{ color: "#66716B" }}>{t("booking.missingFields")}</p>
             )}
             {submitError && <p className="mt-3 text-sm text-red-500">{submitError}</p>}
 
             <div className="mt-6">
-              <p className="text-sm font-semibold mb-3" style={{ color: "#1F2A24" }}>Як з вами краще зв'язатися?</p>
+              <p className="text-sm font-semibold mb-3" style={{ color: "#1F2A24" }}>{t("booking.contactQuestion")}</p>
               <div className="flex gap-2 mb-4">
                 {(["viber", "telegram"] as const).map((ch) => (
                   <button
@@ -949,7 +1210,7 @@ function BookingModal({
                 className="w-full h-13 rounded-[10px] text-white font-semibold transition-all hover:opacity-90 disabled:opacity-50"
                 style={{ background: "#2F6FED", height: 52 }}
               >
-                {submitting ? "Відправка…" : "Надіслати заявку"}
+                {submitting ? t("booking.submitting") : t("booking.submit")}
               </button>
             </div>
           </>
@@ -958,8 +1219,8 @@ function BookingModal({
             <div className="w-14 h-14 rounded-full flex items-center justify-center mb-6" style={{ background: "#E8F5EF" }}>
               <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 14l5 5 11-10" stroke="#1F7A53" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </div>
-            <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 22, fontWeight: 600, maxWidth: 380 }} className="leading-8 mb-8">Вашу заявку надіслано менеджеру, очікуйте зворотного зв'язку</h3>
-            <button onClick={onClose} className="w-40 h-10 rounded-[10px] font-semibold text-sm transition-all hover:opacity-90" style={{ background: "#2F6FED", color: "#fff" }}>Закрити</button>
+            <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 22, fontWeight: 600, maxWidth: 380 }} className="leading-8 mb-8">{t("booking.successTitle")}</h3>
+            <button onClick={onClose} className="w-40 h-10 rounded-[10px] font-semibold text-sm transition-all hover:opacity-90" style={{ background: "#2F6FED", color: "#fff" }}>{t("common.close")}</button>
           </div>
         )}
       </div>
@@ -979,6 +1240,7 @@ function AuthProfileModal({
   onAuthed: (u: User) => void;
   onLoggedOut: () => void;
 }) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -988,13 +1250,35 @@ function AuthProfileModal({
   const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState(user?.full_name ?? "");
   const [phone, setPhone] = useState(user?.phone ?? "");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(resolveMediaUrl(user?.avatar));
+  const [removeAvatar, setRemoveAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [savingProfile, setSavingProfile] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     setFullName(user?.full_name ?? "");
     setPhone(user?.phone ?? "");
+    setAvatarFile(null);
+    setAvatarPreview(resolveMediaUrl(user?.avatar));
+    setRemoveAvatar(false);
   }, [user]);
+
+  function handleAvatarChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarFile(file);
+    setRemoveAvatar(false);
+    setAvatarPreview(URL.createObjectURL(file));
+  }
+
+  function handleRemoveAvatar() {
+    setAvatarFile(null);
+    setRemoveAvatar(true);
+    setAvatarPreview(null);
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
+  }
 
   async function submitAuth() {
     setSubmitting(true);
@@ -1004,12 +1288,12 @@ function AuthProfileModal({
       const res = await apiFetch(path, { method: "POST", body: JSON.stringify({ email, password }) });
       const data = await res.json();
       if (!res.ok) {
-        setAuthError(data.detail || data.email?.[0] || data.password?.[0] || data.non_field_errors?.[0] || "Помилка. Перевірте дані.");
+        setAuthError(data.detail || data.email?.[0] || data.password?.[0] || data.non_field_errors?.[0] || t("auth.error"));
         return;
       }
       onAuthed(data);
     } catch {
-      setAuthError("Немає з'єднання з сервером.");
+      setAuthError(t("auth.noConnection"));
     } finally {
       setSubmitting(false);
     }
@@ -1018,9 +1302,26 @@ function AuthProfileModal({
   async function saveProfile() {
     setSavingProfile(true);
     try {
-      const res = await apiFetch("/auth/profile/", { method: "PATCH", body: JSON.stringify({ full_name: fullName, phone }) });
+      let res: Response;
+      if (avatarFile) {
+        // Є новий файл — шлемо multipart/form-data (apiFetch сам не проставляє
+        // Content-Type для FormData, щоб браузер додав правильний boundary).
+        const form = new FormData();
+        form.append("full_name", fullName);
+        form.append("phone", phone);
+        form.append("avatar", avatarFile);
+        res = await apiFetch("/auth/profile/", { method: "PATCH", body: form });
+      } else if (removeAvatar) {
+        // Прибираємо аватар — avatar має null=True, тож просто шлемо null.
+        res = await apiFetch("/auth/profile/", { method: "PATCH", body: JSON.stringify({ full_name: fullName, phone, avatar: null }) });
+      } else {
+        res = await apiFetch("/auth/profile/", { method: "PATCH", body: JSON.stringify({ full_name: fullName, phone }) });
+      }
       if (res.ok) {
-        onAuthed(await res.json());
+        const updated: User = await res.json();
+        onAuthed(updated);
+        setAvatarFile(null);
+        setRemoveAvatar(false);
         setEditing(false);
       }
     } finally {
@@ -1041,27 +1342,27 @@ function AuthProfileModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(15,25,20,0.55)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto py-8" style={{ background: "rgba(15,25,20,0.55)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <img src={heroPhoto} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ filter: "blur(4px) brightness(0.35)", transform: "scale(1.05)" }} />
 
-      <div className="relative z-10 w-full" style={{ maxWidth: 440, background: "#fff", borderRadius: 20, padding: 32, boxShadow: "0 16px 48px rgba(31,42,36,0.18)", margin: "0 16px" }}>
+      <div className="relative z-10 w-full max-h-[85vh] overflow-y-auto" style={{ maxWidth: 520, background: "#fff", borderRadius: 20, padding: 32, boxShadow: "0 16px 48px rgba(31,42,36,0.18)", margin: "0 16px" }}>
         {!user ? (
           <>
             <div className="flex items-center justify-between mb-6">
               <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }}>
-                {mode === "login" ? "Вхід" : "Реєстрація"}
+                {mode === "login" ? t("auth.login") : t("auth.register")}
               </h2>
               <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 text-xl transition-colors">×</button>
             </div>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Email</label>
-                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Введіть email" className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("common.email")}</label>
+                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("booking.emailPlaceholder")} className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Пароль</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Введіть пароль" className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("auth.password")}</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t("auth.passwordPlaceholder")} className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
               </div>
             </div>
 
@@ -1073,17 +1374,17 @@ function AuthProfileModal({
               className="w-full mt-6 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90 disabled:opacity-50"
               style={{ background: "#2F6FED", height: 52 }}
             >
-              {submitting ? "Зачекайте…" : mode === "login" ? "Увійти" : "Зареєструватися"}
+              {submitting ? t("auth.wait") : mode === "login" ? t("auth.loginBtn") : t("auth.registerBtn")}
             </button>
 
             <p className="text-center text-sm mt-4" style={{ color: "#66716B" }}>
               {mode === "login" ? (
-                <>Немає акаунту?{" "}
-                  <button onClick={() => { setMode("register"); setAuthError(null); }} className="font-semibold" style={{ color: "#2F6FED" }}>Зареєструватися</button>
+                <>{t("auth.noAccount")}{" "}
+                  <button onClick={() => { setMode("register"); setAuthError(null); }} className="font-semibold" style={{ color: "#2F6FED" }}>{t("auth.registerBtn")}</button>
                 </>
               ) : (
-                <>Вже є акаунт?{" "}
-                  <button onClick={() => { setMode("login"); setAuthError(null); }} className="font-semibold" style={{ color: "#2F6FED" }}>Увійти</button>
+                <>{t("auth.haveAccount")}{" "}
+                  <button onClick={() => { setMode("login"); setAuthError(null); }} className="font-semibold" style={{ color: "#2F6FED" }}>{t("auth.loginBtn")}</button>
                 </>
               )}
             </p>
@@ -1093,39 +1394,78 @@ function AuthProfileModal({
             <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#D64545" strokeWidth="2" strokeLinecap="round"><path d="M12 9v4M12 17h.01M10.3 3.5L2 20h20L13.7 3.5a2 2 0 0 0-3.4 0z" /></svg>
             </div>
-            <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 20, fontWeight: 700 }} className="mb-2">Видалити акаунт?</h3>
-            <p className="text-sm text-gray-500 mb-6">Ця дія незворотна. Усі ваші дані будуть видалені.</p>
+            <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 20, fontWeight: 700 }} className="mb-2">{t("profile.deleteTitle")}</h3>
+            <p className="text-sm text-gray-500 mb-6">{t("profile.deleteText")}</p>
             <div className="flex gap-3">
-              <button onClick={() => setConfirmDelete(false)} className="flex-1 h-12 rounded-[10px] font-semibold text-sm border transition-colors hover:bg-gray-50" style={{ border: "1px solid #E2E4DF" }}>Скасувати</button>
-              <button onClick={deleteAccount} className="flex-1 h-12 rounded-[10px] font-semibold text-sm text-white transition-opacity hover:opacity-90" style={{ background: "#D64545" }}>Так, видалити</button>
+              <button onClick={() => setConfirmDelete(false)} className="flex-1 h-12 rounded-[10px] font-semibold text-sm border transition-colors hover:bg-gray-50" style={{ border: "1px solid #E2E4DF" }}>{t("common.cancel")}</button>
+              <button onClick={deleteAccount} className="flex-1 h-12 rounded-[10px] font-semibold text-sm text-white transition-opacity hover:opacity-90" style={{ background: "#D64545" }}>{t("profile.deleteConfirm")}</button>
             </div>
           </div>
         ) : (
           <>
             <div className="flex items-center justify-between mb-6">
-              <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }}>Профіль</h2>
+              <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }}>{t("profile.title")}</h2>
               <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 text-xl transition-colors">×</button>
+            </div>
+
+            <div className="flex flex-col items-center gap-3 mb-6">
+              <div className="w-20 h-20 rounded-full flex items-center justify-center overflow-hidden" style={{ background: "#F7F8F6", border: "2px solid #E2E4DF" }}>
+                {avatarPreview ? (
+                  <img src={avatarPreview} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <svg width="34" height="34" viewBox="0 0 48 48" fill="none" stroke="#C5CAC3" strokeWidth="1.5">
+                    <circle cx="24" cy="18" r="9" />
+                    <path d="M6 44c0-9.9 8.1-18 18-18s18 8.1 18 18" />
+                  </svg>
+                )}
+              </div>
+
+              {editing && (
+                <>
+                  <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => avatarInputRef.current?.click()}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-full transition-colors hover:bg-gray-50"
+                      style={{ border: "1px solid #E2E4DF", color: "#1F2A24" }}
+                    >
+                      {t("profile.changePhoto")}
+                    </button>
+                    {avatarPreview && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveAvatar}
+                        className="text-xs font-medium transition-opacity hover:opacity-70"
+                        style={{ color: "#66716B" }}
+                      >
+                        {t("profile.removePhoto")}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="space-y-5 mb-8">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#66716B" }}>Email</p>
+                <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#66716B" }}>{t("common.email")}</p>
                 <p className="text-base font-semibold">{user.email}</p>
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#66716B" }}>Ім'я</p>
+                <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#66716B" }}>{t("common.name")}</p>
                 {editing ? (
-                  <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Введіть ім'я" className="w-full px-3 py-2 rounded-[10px] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-300" style={{ border: "1px solid #E2E4DF" }} />
+                  <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder={t("booking.namePlaceholder")} className="w-full px-3 py-2 rounded-[10px] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-300" style={{ border: "1px solid #E2E4DF" }} />
                 ) : (
-                  <p className="text-base font-semibold">{user.full_name || "— не вказано —"}</p>
+                  <p className="text-base font-semibold">{user.full_name || t("profile.notSet")}</p>
                 )}
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#66716B" }}>Телефон</p>
+                <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "#66716B" }}>{t("common.phone")}</p>
                 {editing ? (
                   <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+380..." className="w-full px-3 py-2 rounded-[10px] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-300" style={{ border: "1px solid #E2E4DF" }} />
                 ) : (
-                  <p className="text-base font-semibold">{user.phone || "— не вказано —"}</p>
+                  <p className="text-base font-semibold">{user.phone || t("profile.notSet")}</p>
                 )}
               </div>
             </div>
@@ -1137,15 +1477,25 @@ function AuthProfileModal({
                 className="flex-1 h-12 rounded-[10px] text-sm font-medium transition-colors hover:bg-gray-50 disabled:opacity-50"
                 style={{ border: "1px solid #E2E4DF", color: "#1F2A24" }}
               >
-                {savingProfile ? "Збереження…" : editing ? "Зберегти" : "Редагувати"}
+                {savingProfile ? t("profile.saving") : editing ? t("profile.save") : t("profile.edit")}
               </button>
               <button onClick={logout} className="flex-1 h-12 rounded-[10px] text-sm font-medium transition-colors hover:bg-gray-50" style={{ border: "1px solid #E2E4DF", color: "#1F2A24" }}>
-                Вийти
+                {t("profile.logout")}
               </button>
             </div>
-
+              {user.is_staff && (<a
+              
+                href={`${API_URL.replace(/\/api\/?$/, "")}/admin/`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-center w-full h-12 flex items-center justify-center rounded-[10px] text-sm font-medium mb-3 transition-colors hover:bg-gray-50"
+                style={{ border: "1px solid #E2E4DF", color: "#1F2A24" }}
+              >
+                {t("profile.admin")}
+              </a>
+            )}
             <button onClick={() => setConfirmDelete(true)} className="w-full h-12 rounded-[10px] text-white font-semibold text-sm transition-opacity hover:opacity-90" style={{ background: "#D64545" }}>
-              Видалити акаунт
+              {t("profile.delete")}
             </button>
           </>
         )}
@@ -1155,6 +1505,8 @@ function AuthProfileModal({
 }
 
 // ─── Search Results Page ───────────────────────────────────────────────────────
+const PAGE_SIZE = 5;
+
 function SearchResultsPage({
   tours,
   loading,
@@ -1170,23 +1522,33 @@ function SearchResultsPage({
   chips: Chip[];
   onOpenFilters: () => void;
 }) {
+  const { t } = useI18n();
   const [page, setPage] = useState(1);
+
+  // Якщо змінився результат пошуку (нові фільтри) — скидаємо на першу
+  // сторінку, інакше можна опинитись на "сторінці 3", де вже нічого немає.
+  useEffect(() => {
+    setPage(1);
+  }, [tours]);
+
+  const totalPages = Math.max(1, Math.ceil(tours.length / PAGE_SIZE));
+  const pageTours = tours.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
-        <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }}>Результати пошуку</h1>
+        <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }}>{t("results.title")}</h1>
         <button
           onClick={onOpenFilters}
           className="text-sm font-medium px-4 py-2 rounded-full transition-colors hover:bg-blue-50"
           style={{ border: "1px solid #2F6FED", color: "#2F6FED" }}
         >
-          Розширені параметри
+          {t("results.advanced")}
         </button>
       </div>
 
       {!loading && (
-        <p className="text-sm mb-4" style={{ color: "#66716B" }}>Знайдено турів: {tours.length}</p>
+        <p className="text-sm mb-4" style={{ color: "#66716B" }}>{t("results.found", { n: tours.length })}</p>
       )}
 
       {chips.length > 0 && (
@@ -1204,42 +1566,73 @@ function SearchResultsPage({
         </div>
       )}
 
-      {loading && <p style={{ color: "#66716B" }}>Завантаження турів…</p>}
-      {!loading && tours.length === 0 && <p style={{ color: "#66716B" }}>За вашим запитом нічого не знайдено.</p>}
+      {loading && <p style={{ color: "#66716B" }}>{t("common.loadingTours")}</p>}
+      {!loading && tours.length === 0 && <p style={{ color: "#66716B" }}>{t("results.empty")}</p>}
 
       <div className="space-y-4">
-        {tours.map((t) => (
-          <div key={t.id} onClick={() => onDetails(t)} className="flex items-center gap-0 cursor-pointer hover:shadow-md transition-shadow" style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16, overflow: "hidden", minHeight: 190 }}>
-            <img src={t.img} alt={t.name} className="object-cover flex-shrink-0" style={{ width: 240, height: 190 }} />
-            <div className="flex-1 px-6 py-4">
-              <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 20, fontWeight: 700 }} className="mb-1">{t.name}</h3>
-              <Stars count={t.stars} />
-              <p className="mt-2 text-sm" style={{ color: "#66716B" }}>{t.nights} ночей · {t.country} · {t.meal}</p>
-              <p style={{ fontFamily: "Fraunces, serif", fontSize: 22, fontWeight: 700, color: "#1F7A53" }} className="mt-3">{t.price}</p>
+        {pageTours.map((tour) => (
+          <div key={tour.id} onClick={() => onDetails(tour)} className="flex flex-col sm:flex-row cursor-pointer hover:shadow-md transition-shadow" style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16, overflow: "hidden" }}>
+            <img src={tour.img} alt={tour.name} className="w-full sm:w-60 h-48 sm:h-[190px] object-cover flex-shrink-0" />
+            <div className="flex-1 px-4 sm:px-6 py-4">
+              <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 20, fontWeight: 700 }} className="mb-1">{tour.name}</h3>
+              <Stars count={tour.stars} />
+              <p className="mt-2 text-sm" style={{ color: "#66716B" }}>{t("common.tourMeta", { nights: tour.nights, country: tour.country, meal: tour.meal })}</p>
+              <p style={{ fontFamily: "Fraunces, serif", fontSize: 22, fontWeight: 700, color: "#1F7A53" }} className="mt-3">{tour.price}</p>
             </div>
-            <div className="flex-shrink-0 px-6 flex items-center justify-center">
-              <button onClick={(e) => { e.stopPropagation(); onBook(t); }} className="w-36 h-12 rounded-[10px] text-white font-semibold text-sm transition-all hover:opacity-90" style={{ background: "#2F6FED" }}>Забронювати</button>
+            <div className="flex-shrink-0 px-4 sm:px-6 py-3 sm:py-0 flex items-center justify-center w-full sm:w-auto">
+              <button onClick={(e) => { e.stopPropagation(); onBook(tour); }} className="w-full sm:w-36 h-12 rounded-[10px] text-white font-semibold text-sm transition-all hover:opacity-90" style={{ background: "#2F6FED" }}>{t("common.book")}</button>
             </div>
           </div>
         ))}
       </div>
-
-      {tours.length > 0 && (
+      {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 mt-10">
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button key={n} onClick={() => setPage(n)} className="w-10 h-10 rounded-full text-sm font-semibold transition-all" style={{ background: page === n ? "#2F6FED" : "#fff", color: page === n ? "#fff" : "#1F2A24", border: "1px solid " + (page === n ? "#2F6FED" : "#E2E4DF") }}>{n}</button>
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+            <button
+              key={n}
+              onClick={() => setPage(n)}
+              className="w-10 h-10 rounded-full text-sm font-semibold transition-all"
+              style={{
+                background: page === n ? "#2F6FED" : "#fff",
+                color: page === n ? "#fff" : "#1F2A24",
+                border: "1px solid " + (page === n ? "#2F6FED" : "#E2E4DF"),
+              }}
+            >
+              {n}
+            </button>
           ))}
         </div>
       )}
     </div>
   );
 }
-
 // ─── Tour Details Page ─────────────────────────────────────────────────────────
-function TourDetailsPage({ tourId, onBook }: { tourId: number | null; onBook: (t: Tour) => void }) {
+function TourDetailsPage({
+  tourId,
+  onBook,
+  user,
+  onRequireAuth,
+}: {
+  tourId: number | null;
+  onBook: (t: Tour) => void;
+  user: User | null;
+  onRequireAuth: () => void;
+}) {
+  const { t, lang } = useI18n();
   const [detail, setDetail] = useState<TourDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeImg, setActiveImg] = useState(0);
+
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+  const reviewsRowRef = useRef<HTMLDivElement>(null);
+  const scrollReviews = (dir: number) => reviewsRowRef.current?.scrollBy({ left: dir * 344, behavior: "smooth" });
+
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewText, setReviewText] = useState("");
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
 
   useEffect(() => {
     if (tourId == null) return;
@@ -1261,8 +1654,52 @@ function TourDetailsPage({ tourId, onBook }: { tourId: number | null; onBook: (t
     return () => { cancelled = true; };
   }, [tourId]);
 
-  if (loading) return <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16"><p style={{ color: "#66716B" }}>Завантаження туру…</p></div>;
-  if (!detail) return <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16"><p style={{ color: "#66716B" }}>Тур не знайдено.</p></div>;
+  // Відгуки й стан форми — окремо від деталей туру, і скидаються при
+  // переході на інший тур.
+  useEffect(() => {
+    setReviewRating(5);
+    setReviewText("");
+    setReviewError(null);
+    setReviewSubmitted(false);
+    if (tourId == null) return;
+    let cancelled = false;
+    setReviewsLoading(true);
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/tours/${tourId}/reviews/`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!cancelled) setReviews(Array.isArray(data) ? data : data.results ?? []);
+      } catch {
+        if (!cancelled) setReviews([]);
+      } finally {
+        if (!cancelled) setReviewsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [tourId]);
+
+  async function submitReview() {
+    if (!reviewText.trim() || tourId == null) return;
+    setSubmittingReview(true);
+    setReviewError(null);
+    try {
+      const res = await apiFetch(`/tours/${tourId}/reviews/`, {
+        method: "POST",
+        body: JSON.stringify({ rating: reviewRating, text: reviewText.trim() }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setReviewSubmitted(true);
+      setReviewText("");
+    } catch {
+      setReviewError(t("review.error"));
+    } finally {
+      setSubmittingReview(false);
+    }
+  }
+
+  if (loading) return <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16"><p style={{ color: "#66716B" }}>{t("tour.loading")}</p></div>;
+  if (!detail) return <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16"><p style={{ color: "#66716B" }}>{t("tour.notFound")}</p></div>;
 
   const images = detail.photos.length > 0 ? detail.photos : [detail.img];
 
@@ -1270,7 +1707,7 @@ function TourDetailsPage({ tourId, onBook }: { tourId: number | null; onBook: (t
     <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16">
       <div className="grid gap-10 mb-14" style={{ gridTemplateColumns: "1fr 400px" }}>
         <div>
-          <div className="relative rounded-2xl overflow-hidden" style={{ height: 380 }}>
+          <div className="relative rounded-2xl overflow-hidden h-[240px] sm:h-[320px] md:h-[380px]">
             <img src={images[activeImg]} alt={detail.name} className="w-full h-full object-cover" />
             {images.length > 1 && (
               <>
@@ -1293,43 +1730,105 @@ function TourDetailsPage({ tourId, onBook }: { tourId: number | null; onBook: (t
           <div className="mt-3"><Stars count={detail.stars} size={18} /></div>
           <div className="mt-5 space-y-2 text-base" style={{ color: "#66716B" }}>
             <p>📍 {detail.country}</p>
-            <p>🌙 {detail.nights} ночей</p>
+            <p>🌙 {t("tour.nights", { n: detail.nights })}</p>
             <p>🍽 {detail.meal}</p>
           </div>
           <p style={{ fontFamily: "Fraunces, serif", fontSize: 32, fontWeight: 700, color: "#1F7A53" }} className="mt-6">{detail.price}</p>
-          <button onClick={() => onBook(detail)} className="w-full mt-6 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90" style={{ background: "#2F6FED", height: 56 }}>Забронювати</button>
+          <button onClick={() => onBook(detail)} className="w-full mt-6 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90" style={{ background: "#2F6FED", height: 56 }}>{t("common.book")}</button>
         </div>
       </div>
 
       <div style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16, padding: 40 }} className="mb-12">
-        <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }} className="mb-5">Опис туру</h2>
+        <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }} className="mb-5">{t("tour.descTitle")}</h2>
         <div className="space-y-4 text-base leading-7" style={{ color: "#1F2A24", maxWidth: 1000 }}>
-          <p>{detail.description || "Опис готелю поки не додано менеджером."}</p>
+          <p>{detail.description || t("tour.descEmpty")}</p>
         </div>
       </div>
 
-      <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }} className="mb-6">Відгуки</h2>
-      <div className="grid grid-cols-3 gap-6">
-        {[
-          { name: "Марина Іваненко", date: "12 серпня 2026", text: "Неймовірний готель! Сервіс на найвищому рівні, персонал дуже уважний. Обов'язково повернемося." },
-          { name: "Олексій Петров", date: "5 серпня 2026", text: "Чудовий відпочинок для всієї родини. Діти в захваті від анімації, дорослі від SPA та ресторанів." },
-          { name: "Тетяна Бойко", date: "28 липня 2026", text: "Все включено на справді відмінному рівні. Смачна їжа, чисті пляжі, гарні номери. Рекомендую!" },
-        ].map((r) => (
-          <div key={r.name} style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 14, padding: 24 }}>
-            <div className="flex items-start justify-between mb-3">
-              <div><p className="font-semibold text-sm">{r.name}</p><p className="text-xs mt-0.5" style={{ color: "#66716B" }}>{r.date}</p></div>
-              <Stars count={5} size={13} />
+      <div className="flex items-center justify-between mb-6">
+        <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }}>{t("tour.reviews")}</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {["‹", "›"].map((ch, i) => (
+            <button key={ch} onClick={() => scrollReviews(i === 0 ? -1 : 1)} className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold transition-all hover:bg-gray-100" style={{ border: "1px solid #E2E4DF", color: "#1F2A24" }}>
+              {ch}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {reviewsLoading && <p style={{ color: "#66716B" }} className="mb-6">{t("common.loadingReviews")}</p>}
+      {!reviewsLoading && reviews.length === 0 && <p style={{ color: "#66716B" }} className="mb-6">{t("tour.reviewsEmpty")}</p>}
+
+      {reviews.length > 0 && (
+        <div ref={reviewsRowRef} className="flex gap-6 overflow-x-auto pb-2 mb-8" style={{ scrollbarWidth: "none" }}>
+          {reviews.map((r) => (
+            <div key={r.id} className="flex-shrink-0" style={{ width: 320, background: "#fff", border: "1px solid #E2E4DF", borderRadius: 14, padding: 24, overflow: "hidden" }}>
+              <div className="flex items-start justify-between mb-3 gap-2">
+                <div className="min-w-0"><p className="font-semibold text-sm break-words">{r.author_name}</p><p className="text-xs mt-0.5" style={{ color: "#66716B" }}>{formatDate(r.created_at, lang)}</p></div>
+                <Stars count={r.rating} size={13} />
+              </div>
+              <p className="text-sm leading-6 break-words" style={{ color: "#66716B", overflowWrap: "anywhere" }}>{r.text}</p>
             </div>
-            <p className="text-sm leading-6" style={{ color: "#66716B" }}>{r.text}</p>
+          ))}
+        </div>
+      )}
+
+      <div style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16, padding: 32 }}>
+        <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 20, fontWeight: 700 }} className="mb-4">{t("review.formTitle")}</h3>
+
+        {!user ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm" style={{ color: "#66716B" }}>{t("review.needAuth")}</p>
+            <button onClick={onRequireAuth} className="text-sm font-semibold transition-opacity hover:opacity-70" style={{ color: "#2F6FED" }}>{t("auth.loginBtn")}</button>
           </div>
-        ))}
+        ) : reviewSubmitted ? (
+          <p className="text-sm" style={{ color: "#1F7A53" }}>{t("review.thanks")}</p>
+        ) : (
+          <div className="space-y-4" style={{ maxWidth: 560 }}>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("review.rating")}</label>
+              <StarPicker value={reviewRating} onChange={setReviewRating} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("review.yourReview")}</label>
+              <textarea
+                value={reviewText}
+                onChange={(e) => setReviewText(e.target.value)}
+                rows={4}
+                placeholder={t("review.placeholder")}
+                className="w-full px-4 py-3 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-300 transition-all"
+                style={{ border: "1px solid #E2E4DF" }}
+              />
+            </div>
+            {reviewError && <p className="text-sm text-red-500">{reviewError}</p>}
+            <button
+              disabled={submittingReview || !reviewText.trim()}
+              onClick={submitReview}
+              className="px-6 rounded-[10px] text-white font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "#2F6FED", height: 48 }}
+            >
+              {submittingReview ? t("review.submitting") : t("review.submit")}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 // ─── App ───────────────────────────────────────────────────────────────────────
+// Провайдер мови огортає весь застосунок, щоб будь-який компонент
+// нижче міг узяти t()/lang через useI18n().
 export default function App() {
+  return (
+    <I18nProvider>
+      <AppContent />
+    </I18nProvider>
+  );
+}
+
+function AppContent() {
+  const { t, lang } = useI18n();
   const [page, setPage] = useState<Page>("home");
   const [modal, setModal] = useState<Modal>(null);
   const [selectedTour, setSelectedTour] = useState<Tour | null>(null);
@@ -1347,6 +1846,9 @@ export default function App() {
   const [operators, setOperators] = useState<RefItem[]>([]);
   const [resorts, setResorts] = useState<RefItem[]>([]);
   const [mealTypes, setMealTypes] = useState<RefItem[]>([]);
+
+  const [pinnedReviews, setPinnedReviews] = useState<Review[]>([]);
+  const [pinnedReviewsLoading, setPinnedReviewsLoading] = useState(true);
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   const [user, setUser] = useState<User | null>(null);
@@ -1394,9 +1896,28 @@ export default function App() {
         const data: Tour[] = await res.json();
         if (!cancelled) setTours(data);
       } catch {
-        if (!cancelled) setToursError("Не вдалося завантажити тури. Перевір, чи запущений бекенд (python manage.py runserver) і чи вказаний правильний VITE_API_URL.");
+        if (!cancelled) setToursError(t("app.toursError"));
       } finally {
         if (!cancelled) setToursLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // 3 закріплені (is_pinned) відгуки для головної сторінки — незалежно від
+  // конкретного туру.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/reviews/pinned/`);
+        if (!res.ok) throw new Error(String(res.status));
+        const data = await res.json();
+        if (!cancelled) setPinnedReviews(Array.isArray(data) ? data : data.results ?? []);
+      } catch {
+        if (!cancelled) setPinnedReviews([]);
+      } finally {
+        if (!cancelled) setPinnedReviewsLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -1435,7 +1956,8 @@ export default function App() {
   const refs: RefLists = { countries, departureCities, goalCities, operators, resorts, mealTypes };
 
   const filteredTours = useMemo(() => applyFilters(tours, filters, refs), [tours, filters, countries, departureCities, goalCities, operators]);
-  const chips = useMemo(() => buildChips(filters, refs, setFilters), [filters, countries, departureCities, goalCities, operators]);
+  // lang у залежностях — щоб підписи чіпів перебудувались при зміні мови.
+  const chips = useMemo(() => buildChips(filters, refs, setFilters, t), [filters, countries, departureCities, goalCities, operators, lang]);
 
   const hotTours = tours.filter((t) => t.is_hot);
 
@@ -1449,6 +1971,14 @@ export default function App() {
       return;
     }
     setModal("booking");
+  };
+
+  const openHistory = () => {
+    if (!user) {
+      setModal("profile"); // гостя сразу на логін
+      return;
+    }
+    setPage("history");
   };
 
   const openDetails = (tour: Tour) => {
@@ -1466,7 +1996,7 @@ export default function App() {
 
   return (
     <div className="min-h-full flex flex-col" style={{ background: "#F7F8F6" }}>
-      <Header onProfile={openProfile} onPage={setPage} onOpenFilters={openFilters} user={user} />
+      <Header onProfile={openProfile} onPage={setPage} onOpenFilters={openFilters} onHistory={openHistory} user={user} />
 
       {toursError && (
         <div className="max-w-[1200px] mx-auto px-6 mt-4 w-full">
@@ -1479,11 +2009,11 @@ export default function App() {
           <>
             <Hero filters={filters} onFiltersChange={setFilters} onSearch={runSearch} onOpenFilters={openFilters} />
             <HotTours tours={hotTours} loading={toursLoading} onBook={openBooking} onDetails={openDetails} />
-            <About />
+            <About pinnedReviews={pinnedReviews} pinnedReviewsLoading={pinnedReviewsLoading} />
           </>
         )}
         {page === "tour" && (
-          <TourDetailsPage tourId={selectedTour?.id ?? null} onBook={openBooking} />
+          <TourDetailsPage tourId={selectedTour?.id ?? null} onBook={openBooking} user={user} onRequireAuth={openProfile} />
         )}
         {page === "results" && (
           <SearchResultsPage tours={filteredTours} loading={toursLoading} onBook={openBooking} onDetails={openDetails} chips={chips} onOpenFilters={openFilters} />
@@ -1497,6 +2027,7 @@ export default function App() {
             refs={refs}
           />
         )}
+        {page === "history" && <HistoryPage onDetails={openDetails} />}
       </main>
 
       <Footer />
