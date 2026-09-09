@@ -535,7 +535,7 @@ function Hero({
   const { t } = useI18n();
   return (
     <section
-      className="relative w-full flex flex-col items-center justify-center px-4" style={{ minHeight: 480 }}>
+      className="relative w-full flex flex-col items-center justify-center px-4" style={{ minHeight: 480, borderRadius: "0 0 20px 20px", overflow: "hidden" }}>
       <img src={heroPhoto} alt="Coastal resort aerial view" className="absolute inset-0 w-full h-full object-cover" />
       <div className="absolute inset-0" style={{ background: "rgba(15,30,20,0.45)" }} />
 
@@ -546,7 +546,7 @@ function Hero({
           {t("hero.title")}
         </h1>
 
-        <div className="w-full" style={{ maxWidth: 1040, background: "rgba(255,255,255,0.97)", borderRadius: 20, padding: "28px 32px", boxShadow: "0 8px 40px rgba(0,0,0,0.22)", border: "1px solid #E2E4DF" }}>
+        <div className="w-full" style={{ maxWidth: 1040, background: "rgba(255,255,255,0.97)", borderRadius: 20, padding: "28px 32px", boxShadow: "0 8px 40px rgba(0,0,0,0.22)", border: "1px solid #E2E4DF", marginBottom: 20 }}>
           <div className="flex flex-col sm:flex-row gap-4 sm:flex-wrap">
             <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("hero.where")}</label>
@@ -1698,122 +1698,141 @@ function TourDetailsPage({
     }
   }
 
-  if (loading) return <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16"><p style={{ color: "#66716B" }}>{t("tour.loading")}</p></div>;
-  if (!detail) return <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16"><p style={{ color: "#66716B" }}>{t("tour.notFound")}</p></div>;
+  if (loading) return <div className="max-w-[1200px] mx-auto px-4 sm:px-6 pt-6 sm:pt-10 pb-16"><p style={{ color: "#66716B" }}>{t("tour.loading")}</p></div>;
+  if (!detail) return <div className="max-w-[1200px] mx-auto px-4 sm:px-6 pt-6 sm:pt-10 pb-16"><p style={{ color: "#66716B" }}>{t("tour.notFound")}</p></div>;
 
-  const images = detail.photos.length > 0 ? detail.photos : [detail.img];
+const images = detail.photos.length > 0 ? detail.photos : [detail.img];
 
-  return (
-    <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16">
-      <div className="grid gap-10 mb-14" style={{ gridTemplateColumns: "1fr 400px" }}>
-        <div>
-          <div className="relative rounded-2xl overflow-hidden h-[240px] sm:h-[320px] md:h-[380px]">
-            <img src={images[activeImg]} alt={detail.name} className="w-full h-full object-cover" />
-            {images.length > 1 && (
-              <>
-                <button onClick={() => setActiveImg((activeImg - 1 + images.length) % images.length)} className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 hover:bg-white flex items-center justify-center text-lg font-bold transition-all">‹</button>
-                <button onClick={() => setActiveImg((activeImg + 1) % images.length)} className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 hover:bg-white flex items-center justify-center text-lg font-bold transition-all">›</button>
-              </>
-            )}
-          </div>
+return (
+  <div className="max-w-[1200px] mx-auto px-4 sm:px-6 pt-6 sm:pt-10 pb-16">
+    {/* Адаптивная сетка: 1 колонка на мобилках, 2 колонки на экранах lg+ */}
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6 lg:gap-10 mb-10 sm:mb-14">
+      <div>
+        {/* Главная картинка с адаптивной высотой */}
+        <div className="relative rounded-2xl overflow-hidden h-[240px] xs:h-[280px] sm:h-[340px] md:h-[380px]">
+          <img src={images[activeImg]} alt={detail.name} className="w-full h-full object-cover" />
           {images.length > 1 && (
-            <div className="flex gap-2 mt-3">
-              {images.map((img, i) => (
-                <img key={i} src={img} alt="" onClick={() => setActiveImg(i)} className="rounded-xl object-cover cursor-pointer transition-all" style={{ width: 72, height: 64, border: i === activeImg ? "2px solid #2F6FED" : "2px solid transparent", opacity: i === activeImg ? 1 : 0.7 }} />
-              ))}
-            </div>
+            <>
+              <button onClick={() => setActiveImg((activeImg - 1 + images.length) % images.length)} className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/80 hover:bg-white flex items-center justify-center text-lg font-bold transition-all shadow-md">‹</button>
+              <button onClick={() => setActiveImg((activeImg + 1) % images.length)} className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/80 hover:bg-white flex items-center justify-center text-lg font-bold transition-all shadow-md">›</button>
+            </>
           )}
         </div>
 
-        <div style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16, padding: 32 }}>
-          <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700, lineHeight: 1.2 }}>{detail.name}</h1>
-          <div className="mt-3"><Stars count={detail.stars} size={18} /></div>
-          <div className="mt-5 space-y-2 text-base" style={{ color: "#66716B" }}>
-            <p>📍 {detail.country}</p>
-            <p>🌙 {t("tour.nights", { n: detail.nights })}</p>
-            <p>🍽 {detail.meal}</p>
-          </div>
-          <p style={{ fontFamily: "Fraunces, serif", fontSize: 32, fontWeight: 700, color: "#1F7A53" }} className="mt-6">{detail.price}</p>
-          <button onClick={() => onBook(detail)} className="w-full mt-6 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90" style={{ background: "#2F6FED", height: 56 }}>{t("common.book")}</button>
-        </div>
-      </div>
-
-      <div style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16, padding: 40 }} className="mb-12">
-        <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }} className="mb-5">{t("tour.descTitle")}</h2>
-        <div className="space-y-4 text-base leading-7" style={{ color: "#1F2A24", maxWidth: 1000 }}>
-          <p>{detail.description || t("tour.descEmpty")}</p>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between mb-6">
-        <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }}>{t("tour.reviews")}</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {["‹", "›"].map((ch, i) => (
-            <button key={ch} onClick={() => scrollReviews(i === 0 ? -1 : 1)} className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold transition-all hover:bg-gray-100" style={{ border: "1px solid #E2E4DF", color: "#1F2A24" }}>
-              {ch}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {reviewsLoading && <p style={{ color: "#66716B" }} className="mb-6">{t("common.loadingReviews")}</p>}
-      {!reviewsLoading && reviews.length === 0 && <p style={{ color: "#66716B" }} className="mb-6">{t("tour.reviewsEmpty")}</p>}
-
-      {reviews.length > 0 && (
-        <div ref={reviewsRowRef} className="flex gap-6 overflow-x-auto pb-2 mb-8" style={{ scrollbarWidth: "none" }}>
-          {reviews.map((r) => (
-            <div key={r.id} className="flex-shrink-0" style={{ width: 320, background: "#fff", border: "1px solid #E2E4DF", borderRadius: 14, padding: 24, overflow: "hidden" }}>
-              <div className="flex items-start justify-between mb-3 gap-2">
-                <div className="min-w-0"><p className="font-semibold text-sm break-words">{r.author_name}</p><p className="text-xs mt-0.5" style={{ color: "#66716B" }}>{formatDate(r.created_at, lang)}</p></div>
-                <Stars count={r.rating} size={13} />
-              </div>
-              <p className="text-sm leading-6 break-words" style={{ color: "#66716B", overflowWrap: "anywhere" }}>{r.text}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16, padding: 32 }}>
-        <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 20, fontWeight: 700 }} className="mb-4">{t("review.formTitle")}</h3>
-
-        {!user ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm" style={{ color: "#66716B" }}>{t("review.needAuth")}</p>
-            <button onClick={onRequireAuth} className="text-sm font-semibold transition-opacity hover:opacity-70" style={{ color: "#2F6FED" }}>{t("auth.loginBtn")}</button>
-          </div>
-        ) : reviewSubmitted ? (
-          <p className="text-sm" style={{ color: "#1F7A53" }}>{t("review.thanks")}</p>
-        ) : (
-          <div className="space-y-4" style={{ maxWidth: 560 }}>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("review.rating")}</label>
-              <StarPicker value={reviewRating} onChange={setReviewRating} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("review.yourReview")}</label>
-              <textarea
-                value={reviewText}
-                onChange={(e) => setReviewText(e.target.value)}
-                rows={4}
-                placeholder={t("review.placeholder")}
-                className="w-full px-4 py-3 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-300 transition-all"
-                style={{ border: "1px solid #E2E4DF" }}
+        {/* Миниатюры с горизонтальным скроллом */}
+        {images.length > 1 && (
+          <div className="flex gap-2 mt-3 overflow-x-auto pb-2 scrollbar-none">
+            {images.map((img, i) => (
+              <img
+                key={i}
+                src={img}
+                alt=""
+                onClick={() => setActiveImg(i)}
+                className="rounded-xl object-cover cursor-pointer transition-all shrink-0 w-16 h-14 sm:w-[72px] sm:h-16"
+                style={{
+                  border: i === activeImg ? "2px solid #2F6FED" : "2px solid transparent",
+                  opacity: i === activeImg ? 1 : 0.7
+                }}
               />
-            </div>
-            {reviewError && <p className="text-sm text-red-500">{reviewError}</p>}
-            <button
-              disabled={submittingReview || !reviewText.trim()}
-              onClick={submitReview}
-              className="px-6 rounded-[10px] text-white font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-50"
-              style={{ background: "#2F6FED", height: 48 }}
-            >
-              {submittingReview ? t("review.submitting") : t("review.submit")}
-            </button>
+            ))}
           </div>
         )}
       </div>
+
+      {/* Карточка отеля с ценой и бронированием */}
+      <div className="p-5 sm:p-8" style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16 }}>
+        <h1 className="text-xl sm:text-2xl lg:text-[28px]" style={{ fontFamily: "Fraunces, serif", fontWeight: 700, lineHeight: 1.2 }}>{detail.name}</h1>
+        <div className="mt-3"><Stars count={detail.stars} size={18} /></div>
+        <div className="mt-5 space-y-2 text-sm sm:text-base" style={{ color: "#66716B" }}>
+          <p>📍 {detail.country}</p>
+          <p>🌙 {t("tour.nights", { n: detail.nights })}</p>
+          <p>🍽 {detail.meal}</p>
+        </div>
+        <p className="mt-5 sm:mt-6 text-2xl sm:text-3xl" style={{ fontFamily: "Fraunces, serif", fontWeight: 700, color: "#1F7A53" }}>{detail.price}</p>
+        <button onClick={() => onBook(detail)} className="w-full mt-5 sm:mt-6 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90" style={{ background: "#2F6FED", height: 56 }}>{t("common.book")}</button>
+      </div>
     </div>
-  );
+
+    {/* Описание тура */}
+    <div className="p-5 sm:p-8 md:p-10 mb-8 sm:mb-12" style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16 }}>
+      <h2 className="text-xl sm:text-2xl mb-4 sm:mb-5" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>{t("tour.descTitle")}</h2>
+      <div className="space-y-4 text-sm sm:text-base leading-relaxed whitespace-pre-line" style={{ color: "#1F2A24", maxWidth: 1000 }}>
+        {detail.description || t("tour.descEmpty")}
+      </div>
+    </div>
+
+    {/* Заголовок отзывов и кнопки переключения */}
+    <div className="flex items-center justify-between gap-4 mb-6">
+      <h2 className="text-xl sm:text-2xl" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>{t("tour.reviews")}</h2>
+      <div className="flex gap-2">
+        {["‹", "›"].map((ch, i) => (
+          <button key={ch} onClick={() => scrollReviews(i === 0 ? -1 : 1)} className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-lg font-bold transition-all hover:bg-gray-100" style={{ border: "1px solid #E2E4DF", color: "#1F2A24" }}>
+            {ch}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    {reviewsLoading && <p style={{ color: "#66716B" }} className="mb-6">{t("common.loadingReviews")}</p>}
+    {!reviewsLoading && reviews.length === 0 && <p style={{ color: "#66716B" }} className="mb-6">{t("tour.reviewsEmpty")}</p>}
+
+    {/* Список отзывов */}
+    {reviews.length > 0 && (
+      <div ref={reviewsRowRef} className="flex gap-4 sm:gap-6 overflow-x-auto pb-2 mb-8" style={{ scrollbarWidth: "none" }}>
+        {reviews.map((r) => (
+          <div key={r.id} className="flex-shrink-0 w-[270px] sm:w-[320px] p-4 sm:p-6" style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 14, overflow: "hidden" }}>
+            <div className="flex items-start justify-between mb-3 gap-2">
+              <div className="min-w-0"><p className="font-semibold text-sm break-words">{r.author_name}</p><p className="text-xs mt-0.5" style={{ color: "#66716B" }}>{formatDate(r.created_at, lang)}</p></div>
+              <Stars count={r.rating} size={13} />
+            </div>
+            <p className="text-sm leading-6 break-words" style={{ color: "#66716B", overflowWrap: "anywhere" }}>{r.text}</p>
+          </div>
+        ))}
+      </div>
+    )}
+
+    {/* Форма отзыва */}
+    <div className="p-5 sm:p-8" style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16 }}>
+      <h3 className="text-lg sm:text-xl mb-4" style={{ fontFamily: "Fraunces, serif", fontWeight: 700 }}>{t("review.formTitle")}</h3>
+
+      {!user ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm" style={{ color: "#66716B" }}>{t("review.needAuth")}</p>
+          <button onClick={onRequireAuth} className="text-sm font-semibold transition-opacity hover:opacity-70" style={{ color: "#2F6FED" }}>{t("auth.loginBtn")}</button>
+        </div>
+      ) : reviewSubmitted ? (
+        <p className="text-sm" style={{ color: "#1F7A53" }}>{t("review.thanks")}</p>
+      ) : (
+        <div className="space-y-4" style={{ maxWidth: 560 }}>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("review.rating")}</label>
+            <StarPicker value={reviewRating} onChange={setReviewRating} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("review.yourReview")}</label>
+            <textarea
+              value={reviewText}
+              onChange={(e) => setReviewText(e.target.value)}
+              rows={4}
+              placeholder={t("review.placeholder")}
+              className="w-full px-4 py-3 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-300 transition-all"
+              style={{ border: "1px solid #E2E4DF" }}
+            />
+          </div>
+          {reviewError && <p className="text-sm text-red-500">{reviewError}</p>}
+          <button
+            disabled={submittingReview || !reviewText.trim()}
+            onClick={submitReview}
+            className="w-full sm:w-auto px-6 rounded-[10px] text-white font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-50"
+            style={{ background: "#2F6FED", height: 48 }}
+          >
+            {submittingReview ? t("review.submitting") : t("review.submit")}
+          </button>
+        </div>
+      )}
+    </div>
+  </div>
+);
 }
 
 // ─── App ───────────────────────────────────────────────────────────────────────

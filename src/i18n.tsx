@@ -33,7 +33,7 @@ const uk = {
 
   // Хедер
   "header.logoAlt": "Логотип",
-  "header.brand": "Вам повезло обрати нас",
+  "header.brand": "На головну",
   "header.advancedFilter": "Розширений фільтр",
   "header.history": "Історія",
   "header.loginRegister": "Увійти / Зареєструватися",
@@ -216,7 +216,7 @@ const ru: Record<keyof typeof uk, string> = {
 
   // Хедер
   "header.logoAlt": "Логотип",
-  "header.brand": "Вам повезло выбрать нас",
+  "header.brand": "На главную",
   "header.advancedFilter": "Расширенный фильтр",
   "header.history": "История",
   "header.loginRegister": "Войти / Зарегистрироваться",
