@@ -3,6 +3,11 @@ import type { ReactNode, CSSProperties, ChangeEvent } from "react";
 import heroPhoto from "@/imports/aerial-view-of-coastal-resort-with-interconnected-pools-near-mai-khao-beach.png";
 import { I18nProvider, useI18n, LOCALE, LANGS, LANG_LABEL } from "@/i18n";
 import type { TFunc, Lang } from "@/i18n";
+import { BrowserRouter } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { Routes, Route, useNavigate } from "react-router-dom";
+
+
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 const API_URL = (import.meta as any).env?.VITE_API_URL ?? "http://localhost:8000/api";
@@ -233,6 +238,7 @@ interface Chip {
 interface Review {
   id: number;
   author_name: string;
+  author_avatar:string | null;
   rating: number;
   text: string;
   created_at: string;
@@ -245,6 +251,22 @@ function formatDate(iso: string, lang: Lang): string {
   } catch {
     return iso;
   }
+}
+
+function ReviewAvatar({ src, name }: { src: string | null; name: string }) {
+  if (src) {
+    return (
+      <img src={src} alt="" className="rounded-full object-cover flex-shrink-0" style={{ width: 36, height: 36 }} />
+    );
+  }
+  return (
+    <div
+      className="rounded-full flex items-center justify-center flex-shrink-0 font-semibold text-sm"
+      style={{ width: 36, height: 36, background: "#E8F5EF", color: "#1F7A53" }}
+    >
+      {name?.[0]?.toUpperCase() || "?"}
+    </div>
+  );
 }
 
 function buildChips(f: Filters, refs: RefLists, onFiltersChange: (patch: Partial<Filters>) => void, t: TFunc): Chip[] {
@@ -385,26 +407,21 @@ function Checkbox({ checked, onChange, label }: { checked: boolean; onChange: (v
 }
 
 // ─── Header ───────────────────────────────────────────────────────────────────
-function Header({
-  onProfile,
-  onPage,
-  onOpenFilters,
-  onHistory,
-  user,
-}: {
+
+function Header({ onProfile, onOpenFilters, onHistory, user }: {
   onProfile: () => void;
-  onPage: (p: Page) => void;
   onOpenFilters: () => void;
   onHistory: () => void;
   user: User | null;
 }) {
+  const navigate = useNavigate();
   const { t, lang, setLang } = useI18n();
   const [langOpen, setLangOpen] = useState(false);
 
   return (
     <header style={{ background: "#1F7A53" }} className="w-full h-20 flex-shrink-0">
       <div className="max-w-[1200px] mx-auto px-6 h-full flex items-center justify-between">
-        <button onClick={() => onPage("home")} className="flex items-center gap-3 group">
+        <button onClick={() => navigate("/")} className="flex items-center gap-3 group">
           <svg
             width="64"
             height="64"
@@ -955,10 +972,16 @@ function About({ pinnedReviews, pinnedReviewsLoading }: { pinnedReviews: Review[
           )}
           {pinnedReviews.map((r) => (
             <div key={r.id} className="p-5 overflow-hidden" style={{ background: "#fff", borderRadius: 12, border: "1px solid #E2E4DF", boxShadow: "0 2px 8px rgba(31,42,36,0.04)" }}>
-              <div className="flex items-center justify-between mb-2 gap-2">
-                <span className="font-semibold text-sm break-words">{r.author_name}</span>
-                <Stars count={r.rating} size={13} />
-              </div>
+                <div className="flex items-start justify-between mb-3 gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <ReviewAvatar src={r.author_avatar} name={r.author_name} />
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm break-words">{r.author_name}</p>
+                      <p className="text-xs mt-0.5" style={{ color: "#66716B" }}></p>
+                    </div>
+                  </div>
+                  <Stars count={r.rating} size={13} />
+                </div>
               <p className="text-sm leading-6 break-words" style={{ color: "#66716B", overflowWrap: "anywhere" }}>{r.text}</p>
             </div>
           ))}
@@ -976,7 +999,7 @@ function Footer() {
       <div className="max-w-[1200px] mx-auto px-6 py-12">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 text-white">
           <div>
-            <div className="mt-8 pt-5 flex flex-col sm:flex-row items-center sm: gap-2 text-xs" style={{ borderTop: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.6)" }}>
+            <div className="mt-1  flex flex-col sm:flex-row items-center sm: gap-2 text-xs" style={{ borderBottom: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.6)", padding: 20 }}>
               <svg
                 width="64"
                 height="64"
@@ -1031,7 +1054,7 @@ function Footer() {
               </svg>
               <span style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 16 }}>{t("footer.brand")}</span>
             </div>
-            <p className="text-sm leading-6 text-white/70">{t("footer.tagline")}</p>
+            <p className="text-sm leading-6 text-white/70" style = {{paddingTop: 32}}>{t("footer.tagline")}</p>
           </div>
           <div>
             <h4 className="font-semibold mb-4">{t("footer.contacts")}</h4>
@@ -1607,17 +1630,18 @@ function SearchResultsPage({
   );
 }
 // ─── Tour Details Page ─────────────────────────────────────────────────────────
+
 function TourDetailsPage({
-  tourId,
   onBook,
   user,
   onRequireAuth,
 }: {
-  tourId: number | null;
   onBook: (t: Tour) => void;
   user: User | null;
   onRequireAuth: () => void;
 }) {
+  const { id } = useParams<{ id: string }>();
+  const tourId = id ? Number(id) : null;
   const { t, lang } = useI18n();
   const [detail, setDetail] = useState<TourDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1782,10 +1806,20 @@ return (
         {reviews.map((r) => (
           <div key={r.id} className="flex-shrink-0 w-[270px] sm:w-[320px] p-4 sm:p-6" style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 14, overflow: "hidden" }}>
             <div className="flex items-start justify-between mb-3 gap-2">
-              <div className="min-w-0"><p className="font-semibold text-sm break-words">{r.author_name}</p><p className="text-xs mt-0.5" style={{ color: "#66716B" }}>{formatDate(r.created_at, lang)}</p></div>
+              <div className="flex items-center gap-2 min-w-0">
+                    <ReviewAvatar src={r.author_avatar} name={r.author_name} />
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm break-words">{r.author_name}</p>
+                      <p className="text-xs mt-0.5" style={{ color: "#66716B" }}></p>
+                    </div>
+                    
+              </div>
+              
               <Stars count={r.rating} size={13} />
             </div>
+            
             <p className="text-sm leading-6 break-words" style={{ color: "#66716B", overflowWrap: "anywhere" }}>{r.text}</p>
+            <p className="text-xs mt-0.5" style={{ color: "#66716B" }}>{formatDate(r.created_at, lang)}</p>
           </div>
         ))}
       </div>
@@ -1838,17 +1872,11 @@ return (
 // ─── App ───────────────────────────────────────────────────────────────────────
 // Провайдер мови огортає весь застосунок, щоб будь-який компонент
 // нижче міг узяти t()/lang через useI18n().
-export default function App() {
-  return (
-    <I18nProvider>
-      <AppContent />
-    </I18nProvider>
-  );
-}
 
-function AppContent() {
+export default function AppContent() {
   const { t, lang } = useI18n();
-  const [page, setPage] = useState<Page>("home");
+  const navigate = useNavigate();
+
   const [modal, setModal] = useState<Modal>(null);
   const [selectedTour, setSelectedTour] = useState<Tour | null>(null);
 
@@ -1869,11 +1897,8 @@ function AppContent() {
   const [pinnedReviews, setPinnedReviews] = useState<Review[]>([]);
   const [pinnedReviewsLoading, setPinnedReviewsLoading] = useState(true);
 
-  // ── Auth ──────────────────────────────────────────────────────────────────
   const [user, setUser] = useState<User | null>(null);
   const [userLoading, setUserLoading] = useState(true);
-  // Якщо гість тиснув "Забронювати" — запам'ятовуємо намір, і одразу після
-  // успішного логіна/реєстрації відкриваємо саме форму брони, а не профіль.
   const [pendingBooking, setPendingBooking] = useState(false);
 
   useEffect(() => {
@@ -1882,11 +1907,9 @@ function AppContent() {
       try {
         await apiFetch("/auth/csrf/");
         const res = await apiFetch("/auth/me/");
-        if (res.ok && !cancelled) {
-          setUser(await res.json());
-        }
+        if (res.ok && !cancelled) setUser(await res.json());
       } catch {
-        // бекенд недоступний або гість — просто лишаємось незалогіненими
+        // гість / бек недоступний
       } finally {
         if (!cancelled) setUserLoading(false);
       }
@@ -1902,9 +1925,7 @@ function AppContent() {
     }
   };
 
-  const handleLoggedOut = () => {
-    setUser(null);
-  };
+  const handleLoggedOut = () => setUser(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1923,8 +1944,6 @@ function AppContent() {
     return () => { cancelled = true; };
   }, []);
 
-  // 3 закріплені (is_pinned) відгуки для головної сторінки — незалежно від
-  // конкретного туру.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1975,7 +1994,6 @@ function AppContent() {
   const refs: RefLists = { countries, departureCities, goalCities, operators, resorts, mealTypes };
 
   const filteredTours = useMemo(() => applyFilters(tours, filters, refs), [tours, filters, countries, departureCities, goalCities, operators]);
-  // lang у залежностях — щоб підписи чіпів перебудувались при зміні мови.
   const chips = useMemo(() => buildChips(filters, refs, setFilters, t), [filters, countries, departureCities, goalCities, operators, lang]);
 
   const hotTours = tours.filter((t) => t.is_hot);
@@ -1983,8 +2001,6 @@ function AppContent() {
   const openBooking = (tour: Tour) => {
     setSelectedTour(tour);
     if (!user) {
-      // Гість — спочатку відправляємо на вхід/реєстрацію, бронь відкриється
-      // автоматично одразу після успішного логіна (див. handleAuthed).
       setPendingBooking(true);
       setModal("profile");
       return;
@@ -1994,15 +2010,15 @@ function AppContent() {
 
   const openHistory = () => {
     if (!user) {
-      setModal("profile"); // гостя сразу на логін
+      setModal("profile");
       return;
     }
-    setPage("history");
+    navigate("/history");
   };
 
   const openDetails = (tour: Tour) => {
     setSelectedTour(tour);
-    setPage("tour");
+    navigate(`/tour/${tour.id}`);
   };
 
   const openProfile = () => {
@@ -2010,12 +2026,12 @@ function AppContent() {
     setModal("profile");
   };
 
-  const openFilters = () => setPage("filters");
-  const runSearch = () => setPage("results");
+  const openFilters = () => navigate("/filters");
+  const runSearch = () => navigate("/results");
 
   return (
     <div className="min-h-full flex flex-col" style={{ background: "#F7F8F6" }}>
-      <Header onProfile={openProfile} onPage={setPage} onOpenFilters={openFilters} onHistory={openHistory} user={user} />
+      <Header onProfile={openProfile} onOpenFilters={openFilters} onHistory={openHistory} user={user} />
 
       {toursError && (
         <div className="max-w-[1200px] mx-auto px-6 mt-4 w-full">
@@ -2024,29 +2040,28 @@ function AppContent() {
       )}
 
       <main className="flex-1">
-        {page === "home" && (
-          <>
-            <Hero filters={filters} onFiltersChange={setFilters} onSearch={runSearch} onOpenFilters={openFilters} />
-            <HotTours tours={hotTours} loading={toursLoading} onBook={openBooking} onDetails={openDetails} />
-            <About pinnedReviews={pinnedReviews} pinnedReviewsLoading={pinnedReviewsLoading} />
-          </>
-        )}
-        {page === "tour" && (
-          <TourDetailsPage tourId={selectedTour?.id ?? null} onBook={openBooking} user={user} onRequireAuth={openProfile} />
-        )}
-        {page === "results" && (
-          <SearchResultsPage tours={filteredTours} loading={toursLoading} onBook={openBooking} onDetails={openDetails} chips={chips} onOpenFilters={openFilters} />
-        )}
-        {page === "filters" && (
-          <AdvancedFilterPage
-            filters={filters}
-            onFiltersChange={setFilters}
-            onReset={() => setFiltersState(EMPTY_FILTERS)}
-            onSubmit={runSearch}
-            refs={refs}
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <>
+                <Hero filters={filters} onFiltersChange={setFilters} onSearch={runSearch} onOpenFilters={openFilters} />
+                <HotTours tours={hotTours} loading={toursLoading} onBook={openBooking} onDetails={openDetails} />
+                <About pinnedReviews={pinnedReviews} pinnedReviewsLoading={pinnedReviewsLoading} />
+              </>
+            }
           />
-        )}
-        {page === "history" && <HistoryPage onDetails={openDetails} />}
+          <Route path="/tour/:id" element={<TourDetailsPage onBook={openBooking} user={user} onRequireAuth={openProfile} />} />
+          <Route
+            path="/results"
+            element={<SearchResultsPage tours={filteredTours} loading={toursLoading} onBook={openBooking} onDetails={openDetails} chips={chips} onOpenFilters={openFilters} />}
+          />
+          <Route
+            path="/filters"
+            element={<AdvancedFilterPage filters={filters} onFiltersChange={setFilters} onReset={() => setFiltersState(EMPTY_FILTERS)} onSubmit={runSearch} refs={refs} />}
+          />
+          <Route path="/history" element={<HistoryPage onDetails={openDetails} />} />
+        </Routes>
       </main>
 
       <Footer />

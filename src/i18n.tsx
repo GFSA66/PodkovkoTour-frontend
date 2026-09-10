@@ -42,7 +42,7 @@ const uk = {
   // Головний екран
   "hero.title": "Знайдіть свій ідеальний відпочинок",
   "hero.where": "Куди",
-  "hero.wherePlaceholder": "Країна / місто",
+  "hero.wherePlaceholder": "Країна",
   "hero.date": "Дата (для заявки)",
   "hero.stars": "Зірки готелю",
   "hero.people": "Кількість осіб",
@@ -115,7 +115,7 @@ const uk = {
   "about.reviewsEmpty": "Незабаром тут з'являться відгуки наших клієнтів.",
 
   // Футер
-  "footer.brand": "Вам повезло обрати нас",
+  "footer.brand": "Вам пощастило обрати нас",
   "footer.tagline": "Ваш надійний партнер у світі подорожей. Організовуємо незабутній відпочинок з 2012 року.",
   "footer.contacts": "Контакти",
   "footer.social": "Ми в соцмережах",
@@ -225,7 +225,7 @@ const ru: Record<keyof typeof uk, string> = {
   // Главный экран
   "hero.title": "Найдите свой идеальный отдых",
   "hero.where": "Куда",
-  "hero.wherePlaceholder": "Страна / город",
+  "hero.wherePlaceholder": "Страна",
   "hero.date": "Дата (для заявки)",
   "hero.stars": "Звёзды отеля",
   "hero.people": "Количество человек",
