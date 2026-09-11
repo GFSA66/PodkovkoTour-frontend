@@ -38,6 +38,7 @@ const uk = {
   "header.history": "Історія",
   "header.loginRegister": "Увійти / Зареєструватися",
   "header.langAria": "Мова інтерфейсу",
+  "header.welcome": "Вітаємо",
 
   // Головний екран
   "hero.title": "Знайдіть свій ідеальний відпочинок",
@@ -98,6 +99,14 @@ const uk = {
   "history.title": "Мої заявки",
   "history.empty": "Заявок ще немає.",
   "history.tourDeleted": "Тур видалено",
+  "history.filterCountry": "Країна",
+  "history.anyCountry": "Будь-яка",
+  "history.filterStatus": "Статус",
+  "history.anyStatus": "Будь-який",
+  "history.filterStars": "Зірки готелю",
+  "history.anyStars": "Будь-які",
+  "history.filteredEmpty": "За цими фільтрами заявок немає.",
+  
 
   // Гарячі тури
   "hot.title": "Гарячі тури",
@@ -131,6 +140,7 @@ const uk = {
   "booking.pickDeparture": "оберіть дату вильоту",
   "booking.emailPlaceholder": "Введіть email",
   "booking.namePlaceholder": "Введіть ім'я",
+  "booking.phonePlaceholder": "Введіть телефон",
   "booking.missingFields": "Заповніть email, телефон та ім'я, щоб продовжити.",
   "booking.contactQuestion": "Як з вами краще зв'язатися?",
   "booking.submitting": "Відправка…",
@@ -150,6 +160,16 @@ const uk = {
   "auth.haveAccount": "Вже є акаунт?",
   "auth.error": "Помилка. Перевірте дані.",
   "auth.noConnection": "Немає з'єднання з сервером.",
+  "auth.passwordConfirm": "Підтвердіть пароль",
+  "auth.passwordMismatch": "Паролі не співпадають",
+  "auth.forgotPassword": "Забули пароль?",
+  "auth.forgotPasswordTitle": "Відновлення пароля",
+  "auth.forgotPasswordHint": "Введіть email, на який ми надішлемо посилання для відновлення пароля.",
+  "auth.sendResetLink": "Надіслати посилання",
+  "auth.resetLinkSent": "Якщо така пошта є в системі, на неї надіслано лист із посиланням для відновлення пароля.",
+  "auth.backToLogin": "Повернутися до входу",
+  "auth.resetPasswordTitle": "Новий пароль",
+  "auth.resetPasswordBtn": "Зберегти новий пароль",
 
   // Профіль
   "profile.title": "Профіль",
@@ -159,12 +179,19 @@ const uk = {
   "profile.changePhoto": "Змінити фото",
   "profile.removePhoto": "Прибрати фото",
   "profile.notSet": "— не вказано —",
+  "profile.guest": "Гість",
   "profile.saving": "Збереження…",
   "profile.save": "Зберегти",
   "profile.edit": "Редагувати",
   "profile.logout": "Вийти",
   "profile.admin": "Панель адміністратора",
   "profile.delete": "Видалити акаунт",
+  "profile.changePassword": "Змінити пароль",
+  "profile.changePasswordBtn": "Змінити пароль",
+  "profile.oldPassword": "Поточний пароль",
+  "profile.newPassword": "Новий пароль",
+  "profile.newPasswordConfirm": "Підтвердіть новий пароль",
+  "profile.passwordChanged": "Пароль успішно змінено",
 
   // Результати пошуку
   "results.title": "Результати пошуку",
@@ -221,6 +248,7 @@ const ru: Record<keyof typeof uk, string> = {
   "header.history": "История",
   "header.loginRegister": "Войти / Зарегистрироваться",
   "header.langAria": "Язык интерфейса",
+  "header.welcome": "Привет",
 
   // Главный экран
   "hero.title": "Найдите свой идеальный отдых",
@@ -281,6 +309,13 @@ const ru: Record<keyof typeof uk, string> = {
   "history.title": "Мои заявки",
   "history.empty": "Заявок пока нет.",
   "history.tourDeleted": "Тур удалён",
+  "history.filterCountry": "Страна",
+  "history.anyCountry": "Любая",
+  "history.filterStatus": "Статус",
+  "history.anyStatus": "Любой",
+  "history.filterStars": "Звёзды отеля",
+  "history.anyStars": "Любые",
+  "history.filteredEmpty": "По этим фильтрам заявок нет.",
 
   // Горящие туры
   "hot.title": "Горящие туры",
@@ -314,6 +349,7 @@ const ru: Record<keyof typeof uk, string> = {
   "booking.pickDeparture": "выберите дату вылета",
   "booking.emailPlaceholder": "Введите email",
   "booking.namePlaceholder": "Введите имя",
+  "booking.phonePlaceholder": "Введите телефон",
   "booking.missingFields": "Заполните email, телефон и имя, чтобы продолжить.",
   "booking.contactQuestion": "Как с вами лучше связаться?",
   "booking.submitting": "Отправка…",
@@ -333,6 +369,16 @@ const ru: Record<keyof typeof uk, string> = {
   "auth.haveAccount": "Уже есть аккаунт?",
   "auth.error": "Ошибка. Проверьте данные.",
   "auth.noConnection": "Нет соединения с сервером.",
+  "auth.passwordConfirm": "Подтвердите пароль",
+  "auth.passwordMismatch": "Пароли не совпадают",
+  "auth.forgotPassword": "Забыли пароль?",
+  "auth.forgotPasswordTitle": "Восстановление пароля",
+  "auth.forgotPasswordHint": "Введите email, на который мы отправим ссылку для восстановления пароля.",
+  "auth.sendResetLink": "Отправить ссылку",
+  "auth.resetLinkSent": "Если такая почта есть в системе, на неё отправлено письмо со ссылкой для восстановления пароля.",
+  "auth.backToLogin": "Вернуться ко входу",
+  "auth.resetPasswordTitle": "Новый пароль",
+  "auth.resetPasswordBtn": "Сохранить новый пароль",
 
   // Профиль
   "profile.title": "Профиль",
@@ -342,12 +388,19 @@ const ru: Record<keyof typeof uk, string> = {
   "profile.changePhoto": "Изменить фото",
   "profile.removePhoto": "Убрать фото",
   "profile.notSet": "— не указано —",
+  "profile.guest": "Гость",
   "profile.saving": "Сохранение…",
   "profile.save": "Сохранить",
   "profile.edit": "Редактировать",
   "profile.logout": "Выйти",
   "profile.admin": "Панель администратора",
   "profile.delete": "Удалить аккаунт",
+  "profile.changePassword": "Изменить пароль",
+  "profile.changePasswordBtn": "Изменить пароль",
+  "profile.oldPassword": "Текущий пароль",
+  "profile.newPassword": "Новый пароль",
+  "profile.newPasswordConfirm": "Подтвердите новый пароль",
+  "profile.passwordChanged": "Пароль успешно изменён",
 
   // Результаты поиска
   "results.title": "Результаты поиска",

@@ -262,7 +262,7 @@ function ReviewAvatar({ src, name }: { src: string | null; name: string }) {
   return (
     <div
       className="rounded-full flex items-center justify-center flex-shrink-0 font-semibold text-sm"
-      style={{ width: 36, height: 36, background: "#E8F5EF", color: "#1F7A53" }}
+      style={{ width: 36, height: 36, background: "#E8F5EF", color: "#00ab00" }}
     >
       {name?.[0]?.toUpperCase() || "?"}
     </div>
@@ -419,7 +419,7 @@ function Header({ onProfile, onOpenFilters, onHistory, user }: {
   const [langOpen, setLangOpen] = useState(false);
 
   return (
-    <header style={{ background: "#1F7A53" }} className="w-full h-20 flex-shrink-0">
+    <header style={{ background: "#00ab00" }} className="w-full h-20 flex-shrink-0">
       <div className="max-w-[1200px] mx-auto px-6 h-full flex items-center justify-between">
         <button onClick={() => navigate("/")} className="flex items-center gap-3 group">
           <svg
@@ -442,7 +442,7 @@ function Header({ onProfile, onOpenFilters, onHistory, user }: {
                 C24 51 18 47 16 40
                 C13 33 15 25 20 20
                 Z"
-              fill="#16B8A6"/>
+              fill="#2F6FED"/>
 
 
             <circle cx="13" cy="29" r="2" fill="#F7F8F6"/>
@@ -456,7 +456,7 @@ function Header({ onProfile, onOpenFilters, onHistory, user }: {
             <path
               d="M47 24 C49 20 51 17 54 14"
               fill="none"
-              stroke="#39B54A"
+              stroke="#FFB800"
               stroke-width="2.5"
               stroke-linecap="round"/>
 
@@ -472,7 +472,7 @@ function Header({ onProfile, onOpenFilters, onHistory, user }: {
                 C56 22 53 24 50 22
                 C47 20 49 16 52 15
                 Z"
-              fill="#39B54A"/>
+              fill="#FFB800"/>
           </svg>
 
           <span style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 18 }} className="hidden sm:inline text-white leading-tight">
@@ -515,13 +515,24 @@ function Header({ onProfile, onOpenFilters, onHistory, user }: {
             </svg>
           </button>
 
-          <button onClick={onProfile} className="relative flex items-center justify-center transition-colors" title={user ? user.full_name || user.email : t("header.loginRegister")} style={{ width: 24, height: 24 }}>
+          {user?.full_name && (
+            <span className="hidden md:inline-block text-white/80 whitespace-nowrap max-w-[160px] truncate">
+              {t("header.welcome")} {user.full_name || t("profile.guest")}
+            </span>
+          )}
+
+          <button
+            onClick={onProfile}
+            className="relative flex items-center justify-center transition-colors"
+            title={user ? user.full_name || user.email : t("header.loginRegister")}
+            style={{ width: 24, height: 24 }}
+            >
             {user?.avatar ? (
               <img
-                src={resolveMediaUrl(user.avatar) ?? undefined}
-                alt=""
-                className="rounded-full object-cover"
-                style={{ width: 24, height: 24 }}
+              src={resolveMediaUrl(user.avatar) ?? undefined}
+              alt=""
+              className="rounded-full object-cover"
+              style={{ width: 24, height: 24 }}
               />
             ) : (
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="text-white/80 hover:text-white transition-colors">
@@ -529,7 +540,7 @@ function Header({ onProfile, onOpenFilters, onHistory, user }: {
                 <path d="M3 20c0-4.4 3.6-8 8-8s8 3.6 8 8" />
               </svg>
             )}
-            {user && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full" style={{ background: "#5CEAB2" }} />}
+            {user && <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full" style={{ background: "#5CEAB2" }} />}
           </button>
         </nav>
       </div>
@@ -550,6 +561,7 @@ function Hero({
   onOpenFilters: () => void;
 }) {
   const { t } = useI18n();
+  const today = new Date().toISOString().split("T")[0];
   return (
     <section
       className="relative w-full flex flex-col items-center justify-center px-4" style={{ minHeight: 480, borderRadius: "0 0 20px 20px", overflow: "hidden" }}>
@@ -569,7 +581,7 @@ function Hero({
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("hero.where")}</label>
               <input
                 value={filters.destination}
-                onChange={(e) => onFiltersChange({ destination: e.target.value })}
+                onChange={(e) => onFiltersChange({ destination: e.target.value.replace(/[0-9]/g, "") })}
                 placeholder={t("hero.wherePlaceholder")}
                 className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all"
                 style={{ border: "1px solid #E2E4DF", fontSize: 15 }}
@@ -577,10 +589,13 @@ function Hero({
             </div>
 
             <div className="flex flex-col gap-1" style={{ minWidth: 180 }}>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("hero.date")}</label>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                {t("hero.date")}
+              </label>
               <div className="relative">
                 <input
                   type="date"
+                  min={today}
                   value={filters.dateFrom}
                   onChange={(e) => onFiltersChange({ dateFrom: e.target.value })}
                   className="h-14 px-4 pr-5 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all w-full appearance-none"
@@ -846,11 +861,17 @@ function TourCard({ tour, onBook, onDetails }: { tour: Tour; onBook: (t: Tour) =
 }
 
 // ─── Booking History Page ─────────────────────────────────────────────────────
+const HISTORY_PAGE_SIZE = 5;
 
 function HistoryPage({ onDetails }: { onDetails: (t: Tour) => void }) {
   const { t, lang } = useI18n();
   const [items, setItems] = useState<BookingHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [countryFilter, setCountryFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [starsFilter, setStarsFilter] = useState("");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     (async () => {
@@ -862,6 +883,36 @@ function HistoryPage({ onDetails }: { onDetails: (t: Tour) => void }) {
       }
     })();
   }, []);
+
+  const countryOptions = useMemo(() => {
+    const set = new Set<string>();
+    items.forEach((b) => { if (b.tour?.country) set.add(b.tour.country); });
+    return Array.from(set).sort();
+  }, [items]);
+
+  // Пары (код статуса, готовый лейбл с бека) — код нужен для фильтрации,
+  // лейбл берём как есть из status_display, языка тут не касаемся.
+  const statusOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    items.forEach((b) => { if (!map.has(b.status)) map.set(b.status, b.status_display); });
+    return Array.from(map.entries()); // [ [code, display], ... ]
+  }, [items]);
+
+  const filteredItems = useMemo(() => {
+    return items.filter((b) => {
+      if (countryFilter && b.tour?.country !== countryFilter) return false;
+      if (statusFilter && b.status !== statusFilter) return false;
+      if (starsFilter && b.tour?.stars !== Number(starsFilter)) return false;
+      return true;
+    });
+  }, [items, countryFilter, statusFilter, starsFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [countryFilter, statusFilter, starsFilter, items]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / HISTORY_PAGE_SIZE));
+  const pageItems = filteredItems.slice((page - 1) * HISTORY_PAGE_SIZE, page * HISTORY_PAGE_SIZE);
 
   if (loading) {
     return (
@@ -876,41 +927,90 @@ function HistoryPage({ onDetails }: { onDetails: (t: Tour) => void }) {
       <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }} className="mb-6">
         {t("history.title")}
       </h1>
-      {items.length === 0 && <p style={{ color: "#66716B" }}>{t("history.empty")}</p>}
-      <div className="space-y-4">
-        {items.map((b) => (
-          <div
-            key={b.id}
-            onClick={() => b.tour && onDetails(b.tour)}
-            className={(b.tour ? "cursor-pointer " : "") + "flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4"}
-            style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16, padding: 16 }}
-          >
-            <div className="flex items-center gap-3 sm:contents">
-              {b.tour && (
-                <img
-                  src={b.tour.img}
-                  alt={b.tour.name}
-                  className="w-16 h-16 sm:w-[100px] sm:h-[76px] object-cover rounded-[10px] flex-shrink-0"
-                />
-              )}
-              <div className="flex-1">
-                <p style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: 16 }}>
-                  {b.tour ? b.tour.name : t("history.tourDeleted")}
-                </p>
-                <p className="text-sm" style={{ color: "#66716B" }}>
-                  {new Date(b.created_at).toLocaleDateString(LOCALE[lang])} · {b.preferred_contact === "viber" ? "Viber" : "Telegram"}
-                </p>
-              </div>
-            </div>
-            <span
-              className="self-start sm:self-auto"
-              style={{ fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 8, background: "#F7F8F6", color: "#1F2A24" }}
-            >
-              {b.status_display}
-            </span>
+
+      {items.length === 0 ? (
+        <p style={{ color: "#66716B" }}>{t("history.empty")}</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <Field label={t("history.filterCountry")}>
+              <select value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
+                <option value="">{t("history.anyCountry")}</option>
+                {countryOptions.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label={t("history.filterStatus")}>
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
+                <option value="">{t("history.anyStatus")}</option>
+                {statusOptions.map(([code, display]) => (
+                  <option key={code} value={code}>{display}</option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label={t("history.filterStars")}>
+              <select value={starsFilter} onChange={(e) => setStarsFilter(e.target.value)} className={fieldInputClass + " appearance-none"} style={fieldInputStyle}>
+                <option value="">{t("history.anyStars")}</option>
+                {STAR_OPTIONS.map((n) => (
+                  <option key={n} value={n}>{n} ★</option>
+                ))}
+              </select>
+            </Field>
           </div>
-        ))}
-      </div>
+
+          {filteredItems.length === 0 && <p style={{ color: "#66716B" }}>{t("history.filteredEmpty")}</p>}
+
+          <div className="space-y-4">
+            {pageItems.map((b) => (
+              <div
+                key={b.id}
+                onClick={() => b.tour && onDetails(b.tour)}
+                className={(b.tour ? "cursor-pointer " : "") + "flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4"}
+                style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16, padding: 16 }}
+              >
+                <div className="flex items-center gap-3 sm:contents">
+                  {b.tour && (
+                    <img src={b.tour.img} alt={b.tour.name} className="w-16 h-16 sm:w-[100px] sm:h-[76px] object-cover rounded-[10px] flex-shrink-0" />
+                  )}
+                  <div className="flex-1">
+                    <p style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: 16 }}>
+                      {b.tour ? b.tour.name : t("history.tourDeleted")}
+                    </p>
+                    <p className="text-sm" style={{ color: "#66716B" }}>
+                      {new Date(b.created_at).toLocaleDateString(LOCALE[lang])} · {b.preferred_contact === "viber" ? "Viber" : "Telegram"}
+                    </p>
+                  </div>
+                </div>
+                <span className="self-start sm:self-auto" style={{ fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 8, background: "#F7F8F6", color: "#1F2A24" }}>
+                  {b.status_display}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-10">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setPage(n)}
+                  className="w-10 h-10 rounded-full text-sm font-semibold transition-all"
+                  style={{
+                    background: page === n ? "#2F6FED" : "#fff",
+                    color: page === n ? "#fff" : "#1F2A24",
+                    border: "1px solid " + (page === n ? "#2F6FED" : "#E2E4DF"),
+                  }}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -995,7 +1095,7 @@ function About({ pinnedReviews, pinnedReviewsLoading }: { pinnedReviews: Review[
 function Footer() {
   const { t } = useI18n();
   return (
-    <footer style={{ background: "#1F7A53" }} className="w-full">
+    <footer style={{ background: "#00ab00" }} className="w-full">
       <div className="max-w-[1200px] mx-auto px-6 py-12">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 text-white">
           <div>
@@ -1020,7 +1120,7 @@ function Footer() {
                     C24 51 18 47 16 40
                     C13 33 15 25 20 20
                     Z"
-                  fill="#16B8A6"/>
+                  fill="#2F6FED"/>
 
 
                 <circle cx="13" cy="29" r="2" fill="#F7F8F6"/>
@@ -1034,7 +1134,7 @@ function Footer() {
                 <path
                   d="M47 24 C49 20 51 17 54 14"
                   fill="none"
-                  stroke="#39B54A"
+                  stroke="#FFB800"
                   stroke-width="2.5"
                   stroke-linecap="round"/>
 
@@ -1050,7 +1150,7 @@ function Footer() {
                     C56 22 53 24 50 22
                     C47 20 49 16 52 15
                     Z"
-                  fill="#39B54A"/>
+                  fill="#FFB800"/>
               </svg>
               <span style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 16 }}>{t("footer.brand")}</span>
             </div>
@@ -1115,6 +1215,7 @@ function BookingModal({
   const missingFields = !email.trim() || !phone.trim() || !name.trim();
   const canSubmit = !missingFields && !submitting;
   const [preferredContact, setPreferredContact] = useState<"viber" | "telegram">("telegram");
+  const [mouseDownOnOverlay, setMouseDownOnOverlay] = useState(false);
 
   async function submit() {
     if (!canSubmit) return;
@@ -1145,8 +1246,21 @@ function BookingModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto py-8" style={{ background: "rgba(15,25,20,0.55)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <img src={heroPhoto} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ filter: "blur(4px) brightness(0.35)", transform: "scale(1.05)" }} />
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto py-8"
+      style={{ background: "rgba(15,25,20,0.55)" }}
+      onMouseDown={(e) => setMouseDownOnOverlay(e.target === e.currentTarget)}
+      onClick={(e) => {
+        if (mouseDownOnOverlay && e.target === e.currentTarget) onClose();
+      }}
+    >
+      <img
+        src={heroPhoto}
+        alt=""
+        draggable={false}
+        className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
+        style={{ filter: "blur(4px) brightness(0.35)", transform: "scale(1.05)" }}
+      />
 
       <div className="relative z-10 w-full max-h-[85vh] overflow-y-auto" style={{ maxWidth: 520, background: "#fff", borderRadius: 20, padding: 32, boxShadow: "0 16px 48px rgba(31,42,36,0.18)", margin: "0 16px" }}>
         {!success ? (
@@ -1240,12 +1354,49 @@ function BookingModal({
         ) : (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <div className="w-14 h-14 rounded-full flex items-center justify-center mb-6" style={{ background: "#E8F5EF" }}>
-              <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 14l5 5 11-10" stroke="#1F7A53" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 14l5 5 11-10" stroke="#00ab00" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </div>
             <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 22, fontWeight: 600, maxWidth: 380 }} className="leading-8 mb-8">{t("booking.successTitle")}</h3>
             <button onClick={onClose} className="w-40 h-10 rounded-[10px] font-semibold text-sm transition-all hover:opacity-90" style={{ background: "#2F6FED", color: "#fff" }}>{t("common.close")}</button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function PasswordInput({
+  label, value, onChange, show, onToggleShow, error,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  show: boolean;
+  onToggleShow: () => void;
+  error?: boolean;
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{label}</label>
+      <div className="relative">
+        <input
+          type={show ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full px-4 pr-11 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+          style={{ border: "1px solid " + (error ? "#D64545" : "#E2E4DF"), height: 52 }}
+        />
+        <button type="button" onClick={onToggleShow} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors" tabIndex={-1}>
+          {show ? (
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M2 9c1.5-3 4.5-5 7-5s5.5 2 7 5c-1.5 3-4.5 5-7 5s-5.5-2-7-5z" /><circle cx="9" cy="9" r="2" />
+            </svg>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M2 9c1.5-3 4.5-5 7-5s5.5 2 7 5c-1.5 3-4.5 5-7 5s-5.5-2-7-5z" /><circle cx="9" cy="9" r="2" /><path d="M2 2l14 14" />
+            </svg>
+          )}
+        </button>
       </div>
     </div>
   );
@@ -1264,7 +1415,11 @@ function AuthProfileModal({
   onLoggedOut: () => void;
 }) {
   const { t } = useI18n();
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSent, setResetSent] = useState(false);
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
@@ -1272,13 +1427,19 @@ function AuthProfileModal({
 
   const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState(user?.full_name ?? "");
-  const [phone, setPhone] = useState(user?.phone ?? "");
+  const [phone, setPhone] = useState("");
+  const [registerPhone, setRegisterPhone] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(resolveMediaUrl(user?.avatar));
   const [removeAvatar, setRemoveAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [savingProfile, setSavingProfile] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const passwordsMismatch = mode === "register" && password && passwordConfirm && password !== passwordConfirm;
+  const [showPassword, setShowPassword] = useState(false);
+  const [mouseDownOnOverlay, setMouseDownOnOverlay] = useState(false);
+  
 
   useEffect(() => {
     setFullName(user?.full_name ?? "");
@@ -1308,7 +1469,10 @@ function AuthProfileModal({
     setAuthError(null);
     try {
       const path = mode === "login" ? "/auth/login/" : "/auth/register/";
-      const res = await apiFetch(path, { method: "POST", body: JSON.stringify({ email, password }) });
+      const body = mode === "login"
+        ? { email, password }
+        : { email, password, phone: registerPhone };
+      const res = await apiFetch(path, { method: "POST", body: JSON.stringify(body) });
       const data = await res.json();
       if (!res.ok) {
         setAuthError(data.detail || data.email?.[0] || data.password?.[0] || data.non_field_errors?.[0] || t("auth.error"));
@@ -1365,11 +1529,82 @@ function AuthProfileModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto py-8" style={{ background: "rgba(15,25,20,0.55)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <img src={heroPhoto} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ filter: "blur(4px) brightness(0.35)", transform: "scale(1.05)" }} />
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto py-8"
+      style={{ background: "rgba(15,25,20,0.55)" }}
+      onMouseDown={(e) => setMouseDownOnOverlay(e.target === e.currentTarget)}
+      onClick={(e) => {
+        if (mouseDownOnOverlay && e.target === e.currentTarget) onClose();
+      }}
+    >
+      <img
+        src={heroPhoto}
+        alt=""
+        draggable={false}
+        className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
+        style={{ filter: "blur(4px) brightness(0.35)", transform: "scale(1.05)" }}
+      />
 
       <div className="relative z-10 w-full max-h-[85vh] overflow-y-auto" style={{ maxWidth: 520, background: "#fff", borderRadius: 20, padding: 32, boxShadow: "0 16px 48px rgba(31,42,36,0.18)", margin: "0 16px" }}>
+        
         {!user ? (
+          mode === "forgot" ? (
+            <>
+              <div className="flex items-center justify-between mb-6">
+                <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }}>{t("auth.forgotPasswordTitle")}</h2>
+                <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 text-xl transition-colors">×</button>
+              </div>
+
+              {!resetSent ? (
+                <>
+                  <p className="text-sm mb-4" style={{ color: "#66716B" }}>{t("auth.forgotPasswordHint")}</p>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("common.email")}</label>
+                    <input
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      placeholder={t("booking.emailPlaceholder")}
+                      className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                      style={{ border: "1px solid #E2E4DF", height: 52 }}
+                    />
+                  </div>
+                  {resetError && <p className="mt-3 text-sm text-red-500">{resetError}</p>}
+                  <button
+                    onClick={async () => {
+                      setResetSubmitting(true);
+                      setResetError(null);
+                      try {
+                        const res = await fetch(`${API_URL}/auth/password-reset/`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ email: resetEmail }),
+                        });
+                        if (!res.ok) throw new Error();
+                        setResetSent(true);
+                      } catch {
+                        setResetError(t("auth.noConnection"));
+                      } finally {
+                        setResetSubmitting(false);
+                      }
+                    }}
+                    disabled={resetSubmitting || !resetEmail.trim()}
+                    className="w-full mt-6 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90 disabled:opacity-50"
+                    style={{ background: "#2F6FED", height: 52 }}
+                  >
+                    {resetSubmitting ? t("auth.wait") : t("auth.sendResetLink")}
+                  </button>
+                </>
+              ) : (
+                <p className="text-sm text-center py-6" style={{ color: "#1F2A24" }}>{t("auth.resetLinkSent")}</p>
+              )}
+
+              <p className="text-center text-sm mt-4" style={{ color: "#66716B" }}>
+                <button onClick={() => { setMode("login"); setAuthError(null); }} className="font-semibold" style={{ color: "#2F6FED" }}>
+                  {t("auth.backToLogin")}
+                </button>
+              </p>
+            </>
+          ) :(
           <>
             <div className="flex items-center justify-between mb-6">
               <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }}>
@@ -1383,17 +1618,78 @@ function AuthProfileModal({
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("common.email")}</label>
                 <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("booking.emailPlaceholder")} className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
               </div>
+              
+              {mode === "register" && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("common.phone")}</label>
+                  <input value={registerPhone} onChange={(e) => setRegisterPhone(e.target.value.replace(/\D/g, ""))} placeholder={t("booking.phonePlaceholder")} className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("auth.password")}</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t("auth.passwordPlaceholder")} className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all" style={{ border: "1px solid #E2E4DF", height: 52 }} />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={t("auth.passwordPlaceholder")}
+                    className="w-full px-4 pr-11 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                    style={{ border: "1px solid #E2E4DF", height: 52 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? (
+                      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <path d="M2 9c1.5-3 4.5-5 7-5s5.5 2 7 5c-1.5 3-4.5 5-7 5s-5.5-2-7-5z" />
+                        <circle cx="9" cy="9" r="2" />
+                      </svg>
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                        <path d="M2 9c1.5-3 4.5-5 7-5s5.5 2 7 5c-1.5 3-4.5 5-7 5s-5.5-2-7-5z" />
+                        <circle cx="9" cy="9" r="2" />
+                        <path d="M2 2l14 14" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                {mode === "login" && (
+                  <p className="text-right text-sm mt-2">
+                    <button
+                      type="button"
+                      onClick={() => { setMode("forgot"); setAuthError(null); setResetSent(false); setResetError(null); }}
+                      className="font-medium"
+                      style={{ color: "#2F6FED" }}
+                    >
+                      {t("auth.forgotPassword")}
+                    </button>
+                  </p>
+                )}
               </div>
+              {mode === "register" && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("auth.passwordConfirm")}</label>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={passwordConfirm}
+                    onChange={(e) => setPasswordConfirm(e.target.value)}
+                    placeholder={t("auth.passwordPlaceholder")}
+                    className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                    style={{ border: "1px solid " + (passwordsMismatch ? "#D64545" : "#E2E4DF"), height: 52 }}
+                  />
+                  {passwordsMismatch && <p className="mt-1.5 text-xs" style={{ color: "#D64545" }}>{t("auth.passwordMismatch")}</p>}
+                </div>
+              )}
             </div>
 
             {authError && <p className="mt-3 text-sm text-red-500">{authError}</p>}
 
             <button
               onClick={submitAuth}
-              disabled={submitting || !email.trim() || !password.trim()}
+              disabled={submitting || !email.trim() || !password.trim() || (mode === "register" && (passwordsMismatch || !passwordConfirm))}
               className="w-full mt-6 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90 disabled:opacity-50"
               style={{ background: "#2F6FED", height: 52 }}
             >
@@ -1412,7 +1708,7 @@ function AuthProfileModal({
               )}
             </p>
           </>
-        ) : confirmDelete ? (
+        ) ): confirmDelete ? (
           <div className="text-center py-6">
             <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#D64545" strokeWidth="2" strokeLinecap="round"><path d="M12 9v4M12 17h.01M10.3 3.5L2 20h20L13.7 3.5a2 2 0 0 0-3.4 0z" /></svg>
@@ -1519,6 +1815,82 @@ function AuthProfileModal({
             )}
             <button onClick={() => setConfirmDelete(true)} className="w-full h-12 rounded-[10px] text-white font-semibold text-sm transition-opacity hover:opacity-90" style={{ background: "#D64545" }}>
               {t("profile.delete")}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ─── Reset Password Page ───────────────────────────────────────────────────────
+
+function ResetPasswordPage() {
+  const { uid, token } = useParams<{ uid: string; token: string }>();
+  const navigate = useNavigate();
+  const { t } = useI18n();
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  async function submit() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/auth/password-reset/confirm/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid, token, new_password: newPassword, new_password_confirm: newPasswordConfirm }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.token?.[0] || data.uid?.[0] || data.new_password?.[0] || data.new_password_confirm?.[0] || data.detail || t("auth.error"));
+        return;
+      }
+      setSuccess(true);
+    } catch {
+      setError(t("auth.noConnection"));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="max-w-[480px] mx-auto px-6 py-16">
+      <div style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 20, padding: 32 }}>
+        <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }} className="mb-6">{t("auth.resetPasswordTitle")}</h1>
+        {success ? (
+          <>
+            <p className="text-sm mb-6" style={{ color: "#1F7A53" }}>{t("profile.passwordChanged")}</p>
+            <button onClick={() => navigate("/")} className="w-full h-12 rounded-[10px] text-white font-semibold" style={{ background: "#2F6FED" }}>
+              {t("auth.backToLogin")}
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="space-y-3">
+              <PasswordInput label={t("profile.newPassword")} value={newPassword} onChange={setNewPassword} show={showPw} onToggleShow={() => setShowPw((v) => !v)} />
+              <PasswordInput
+                label={t("profile.newPasswordConfirm")}
+                value={newPasswordConfirm}
+                onChange={setNewPasswordConfirm}
+                show={showPw}
+                onToggleShow={() => setShowPw((v) => !v)}
+                error={!!newPasswordConfirm && newPassword !== newPasswordConfirm}
+              />
+            </div>
+            {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+            <button
+              onClick={submit}
+              disabled={submitting || !newPassword || newPassword !== newPasswordConfirm || newPassword.length < 6}
+              className="w-full mt-6 h-12 rounded-[10px] text-white font-semibold disabled:opacity-50"
+              style={{ background: "#2F6FED" }}
+            >
+              {submitting ? t("auth.wait") : t("auth.resetPasswordBtn")}
             </button>
           </>
         )}
