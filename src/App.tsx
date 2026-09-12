@@ -699,6 +699,7 @@ function AdvancedFilterPage({
     if (filters.dateFrom && nights > 0) patch.dateTo = addNights(filters.dateFrom, nights);
     onFiltersChange(patch);
   };
+  const today = new Date().toISOString().split("T")[0];
 
   return (
     <div className="max-w-[1200px] mx-auto px-6 pt-10 pb-16">
@@ -775,7 +776,14 @@ function AdvancedFilterPage({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5 mb-6">
           <Field label={t("filters.dateFrom")}>
-            <input type="date" value={filters.dateFrom} onChange={(e) => handleDateFromChange(e.target.value)} className={fieldInputClass} style={fieldInputStyle} />
+            <input
+                  type="date"
+                  min={today}
+                  value={filters.dateFrom}
+                  onChange={(e) => onFiltersChange({ dateFrom: e.target.value })}
+                  className="h-14 px-4 pr-5 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all w-full appearance-none"
+                  style={{ border: "1px solid #E2E4DF", fontSize: 15 }}
+                />
           </Field>
           <Field label={t("filters.dateTo")}>
             <input type="date" value={filters.dateTo} onChange={(e) => onFiltersChange({ dateTo: e.target.value })} className={fieldInputClass} style={fieldInputStyle} />
@@ -1205,6 +1213,7 @@ function BookingModal({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [departureDate, setDepartureDate] = useState(preferredDateFrom || "");
+  const today = new Date().toISOString().split("T")[0];
 
   // Дата повернення рахується автоматично з дати вильоту + кількість ночей
   // САМЕ цього туру (Tour.nights) — це те, що вже "розраховано в турі", тож
@@ -1281,6 +1290,7 @@ function BookingModal({
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("booking.departureDate")}</label>
                   <input
                     type="date"
+                    min = {today}
                     value={departureDate}
                     onChange={(e) => setDepartureDate(e.target.value)}
                     className="w-full px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
