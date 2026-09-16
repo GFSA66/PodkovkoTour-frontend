@@ -5,7 +5,7 @@ import { I18nProvider, useI18n, LOCALE, LANGS, LANG_LABEL } from "@/i18n";
 import type { TFunc, Lang } from "@/i18n";
 import { BrowserRouter } from "react-router-dom";
 import { useParams } from "react-router-dom";
-import { Routes, Route, useNavigate } from "react-router-dom";
+import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 
 
 
@@ -93,6 +93,7 @@ interface BookingHistoryItem {
   id: number;
   tour: Tour | null;
   status: string;
+  countryfrom?: string | RefItem[];
   status_display: string;
   preferred_contact: "viber" | "telegram";
   preferred_date_from: string | null;
@@ -408,235 +409,429 @@ function Checkbox({ checked, onChange, label }: { checked: boolean; onChange: (v
 
 // ─── Header ───────────────────────────────────────────────────────────────────
 
-function Header({ onProfile, onOpenFilters, onHistory, user }: {
+function Header({
+  onProfile,
+  onOpenFilters,
+  onHistory,
+  onGeneralRequest,
+  user,
+}: {
   onProfile: () => void;
   onOpenFilters: () => void;
   onHistory: () => void;
+  onGeneralRequest: () => void;
   user: User | null;
 }) {
   const navigate = useNavigate();
   const { t, lang, setLang } = useI18n();
   const [langOpen, setLangOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Ті самі посилання/обробники, що й раніше — тільки винесені в масив, щоб
+  // не дублювати JSX для десктопної та мобільної версій nav.
+
+  const handleNavClick = (fn: () => void) => {
+    fn();
+    setMobileMenuOpen(false);
+  };
+  const location = useLocation();
+
+  const navItems = [
+    { key: "filters", label: t("header.advancedFilter"), onClick: onOpenFilters, path: null },
+    { key: "hotels", label: t("header.navHotels"), onClick: () => navigate("/hotels"), path: "/hotels" },
+    { key: "flights", label: t("header.navFlights"), onClick: () => navigate("/flights"), path: "/flights" },
+  ];
 
   return (
-    <header style={{ background: "#00ab00" }} className="w-full h-20 flex-shrink-0">
-      <div className="max-w-[1200px] mx-auto px-6 h-full flex items-center justify-between">
-        <button onClick={() => navigate("/")} className="flex items-center gap-3 group">
-          <svg
-            width="64"
-            height="64"
-            viewBox="0 0 64 64"
-            xmlns="http://www.w3.org/2000/svg"
-            aria-label={t("header.logoAlt")}
-          >
-
-            <path
-              d="M14 15
-                C7 21 5 32 8 42
-                C11 52 20 58 32 58
-                C44 58 53 52 56 42
-                C59 32 57 21 50 15
-                L44 20
-                C49 25 51 33 48 40
-                C46 47 40 51 32 51
-                C24 51 18 47 16 40
-                C13 33 15 25 20 20
-                Z"
-              fill="#2F6FED"/>
-
-
-            <circle cx="13" cy="29" r="2" fill="#F7F8F6"/>
-            <circle cx="15" cy="40" r="2" fill="#F7F8F6"/>
-            <circle cx="23" cy="51" r="2" fill="#F7F8F6"/>
-            <circle cx="41" cy="51" r="2" fill="#F7F8F6"/>
-            <circle cx="49" cy="40" r="2" fill="#F7F8F6"/>
-            <circle cx="51" cy="29" r="2" fill="#F7F8F6"/>
-
-
-            <path
-              d="M47 24 C49 20 51 17 54 14"
-              fill="none"
-              stroke="#FFB800"
-              stroke-width="2.5"
-              stroke-linecap="round"/>
-
-
-            <path
-              d="M54 14
-                C48 13 46 8 50 6
-                C53 4 56 6 57 9
-                C58 5 62 4 64 7
-                C66 11 62 14 59 15
-                C63 15 65 18 63 21
-                C60 24 57 20 56 18
-                C56 22 53 24 50 22
-                C47 20 49 16 52 15
-                Z"
-              fill="#FFB800"/>
-          </svg>
-
-          <span style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 18 }} className="hidden sm:inline text-white leading-tight">
-            {t("header.brand")}
-          </span>
-        </button>
-
-        <nav className="flex items-center gap-3 sm:gap-6">
-          <button className="hidden sm:inline text-white/90 hover:text-white text-sm font-medium transition-colors" onClick={onOpenFilters}>
-            {t("header.advancedFilter")}
+    <header className="w-full flex-shrink-0">
+      {/* верхняя полоса: лого + CTA + контакты (без изменений) */}
+      <div style={{ background: "#00ab00" }} className="w-full">
+        <div className="max-w-[1200px] mx-auto px-6 h-16 flex items-center justify-between gap-4">
+          <button onClick={() => navigate("/")} className="flex items-center gap-3 group flex-shrink-0">
+            <svg width="44" height="44" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-label={t("header.logoAlt")}>
+              <path
+                d="M14 15 C7 21 5 32 8 42 C11 52 20 58 32 58 C44 58 53 52 56 42 C59 32 57 21 50 15 L44 20 C49 25 51 33 48 40 C46 47 40 51 32 51 C24 51 18 47 16 40 C13 33 15 25 20 20 Z"
+                fill="#5CEAB2"
+              />
+              <circle cx="13" cy="29" r="2" fill="#F7F8F6" />
+              <circle cx="15" cy="40" r="2" fill="#F7F8F6" />
+              <circle cx="23" cy="51" r="2" fill="#F7F8F6" />
+              <circle cx="41" cy="51" r="2" fill="#F7F8F6" />
+              <circle cx="49" cy="40" r="2" fill="#F7F8F6" />
+              <circle cx="51" cy="29" r="2" fill="#F7F8F6" />
+              <path d="M47 24 C49 20 51 17 54 14" fill="none" stroke="#FFB800" strokeWidth="2.5" strokeLinecap="round" />
+              <path
+                d="M54 14 C48 13 46 8 50 6 C53 4 56 6 57 9 C58 5 62 4 64 7 C66 11 62 14 59 15 C63 15 65 18 63 21 C60 24 57 20 56 18 C56 22 53 24 50 22 C47 20 49 16 52 15 Z"
+                fill="#FFB800"
+              />
+            </svg>
+            <span style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 18 }} className="hidden sm:inline text-white leading-tight">
+              {t("header.brand")}
+            </span>
           </button>
 
-          <div className="relative">
-            <button onClick={() => setLangOpen(!langOpen)} aria-label={t("header.langAria")} className="flex items-center gap-1 bg-white/10 hover:bg-white/20 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
-              {LANG_LABEL[lang]}
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-                <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-              </svg>
+          <div className="hidden lg:flex items-center gap-6">
+            <button
+              onClick={onGeneralRequest}
+              className="h-11 px-6 rounded-full text-white font-semibold text-sm transition-all hover:opacity-90 active:scale-95"
+              style={{ background: "#2F6FED" }}
+            >
+              {t("header.wantTourCta")}
             </button>
-            {langOpen && (
-              <div className="absolute right-0 top-10 bg-white rounded-xl shadow-lg py-1 z-50 min-w-[80px]">
-                {LANGS.map((l) => (
-                  <button
-                    key={l}
-                    onClick={() => { setLang(l); setLangOpen(false); }}
-                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 font-medium rounded-tl-xl rounded-tr-xl rounded-bl-xl rounded-br-xl transition-colors"
-                    style={{ color: l === lang ? "#2F6FED" : "#1F2A24" }}
-                  >
-                    {LANG_LABEL[l]}
-                  </button>
-                ))}
+
+            <div className="flex items-center gap-2 text-white">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <path d="M4 3h3l2 4-2 1c1 2 2 3 4 4l1-2 4 2v3c0 1-1 2-2 2C8 17 1 10 1 5c0-1 1-2 2-2z" />
+              </svg>
+              <div className="text-sm leading-tight">
+                <div className="font-semibold">+38 (044) 123-45-67</div>
+                <div className="text-white/70 text-xs">{t("header.tourPickupContact")}</div>
               </div>
-            )}
+            </div>
+
+            <div className="flex items-center gap-2 text-white">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <circle cx="9" cy="9" r="7" />
+                <path d="M9 5v4l3 2" />
+              </svg>
+              <div className="text-sm leading-tight">
+                <div className="font-semibold">{t("header.workHours")}</div>
+                <div className="text-white/70 text-xs">{t("header.support247")}</div>
+              </div>
+            </div>
           </div>
 
-          <button onClick={onHistory} className="text-white/80 hover:text-white transition-colors" title={t("header.history")}>
-            <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <circle cx="11" cy="11" r="9" />
-              <path d="M11 6v5l3 3" />
-            </svg>
-          </button>
-
-          {user?.full_name && (
-            <span className="hidden md:inline-block text-white/80 whitespace-nowrap max-w-[160px] truncate">
-              {t("header.welcome")} {user.full_name || t("profile.guest")}
-            </span>
-          )}
-
           <button
-            onClick={onProfile}
-            className="relative flex items-center justify-center transition-colors"
-            title={user ? user.full_name || user.email : t("header.loginRegister")}
-            style={{ width: 24, height: 24 }}
-            >
-            {user?.avatar ? (
-              <img
-              src={resolveMediaUrl(user.avatar) ?? undefined}
-              alt=""
-              className="rounded-full object-cover"
-              style={{ width: 24, height: 24 }}
-              />
+            onClick={onGeneralRequest}
+            className="lg:hidden h-10 px-4 rounded-full text-white font-semibold text-sm flex-shrink-0 transition-all hover:opacity-90 active:scale-95"
+            style={{ background: "#2F6FED" }}
+          >
+            {t("header.wantTourCtaShort")}
+          </button>
+        </div>
+      </div>
+
+      {/* нижняя полоса: навигация */}
+      <div style={{ background: "#005e00" }} className="w-full relative">
+        <div className="max-w-[1200px] mx-auto px-6 h-16 flex items-stretch justify-between gap-4">
+          {/* Мобільний тригер — замінює горизонтальний nav нижче lg */}
+          <button
+            onClick={() => setMobileMenuOpen((v) => !v)}
+            aria-label={t("header.menuAria")}
+            aria-expanded={mobileMenuOpen}
+            className="lg:hidden text-white p-1 -ml-1 flex-shrink-0"
+          >
+            {mobileMenuOpen ? (
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <path d="M5 5l12 12M17 5L5 17" />
+              </svg>
             ) : (
-              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="text-white/80 hover:text-white transition-colors">
-                <circle cx="11" cy="8" r="4" />
-                <path d="M3 20c0-4.4 3.6-8 8-8s8 3.6 8 8" />
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <path d="M3 6h16M3 11h16M3 16h16" />
               </svg>
             )}
-            {user && <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full" style={{ background: "#5CEAB2" }} />}
           </button>
+
+          {/* Десктопна навігація — розтягнута на всю доступну ширину justify-between'ом */}
+          <nav className="hidden lg:flex flex-1 items-stretch self-stretch">
+          {navItems.map((item) => {
+            const active = item.path && location.pathname === item.path;
+            return (
+              <button
+                key={item.key}
+                onClick={item.onClick}
+                className="flex-1 flex items-center justify-center px-4 text-[15px] font-bold uppercase
+                          tracking-wide whitespace-nowrap text-white transition-colors
+                          border-r border-white/10 first:border-l first:border-white/10
+                          hover:bg-white/10 active:bg-white/15"
+                style={active ? { background: "#005e00" } : undefined}
+              >
+                {item.label}
+              </button>
+            );
+          })}
         </nav>
+
+          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 pl-4">
+            <div className="relative">
+              <button
+                onClick={() => setLangOpen(!langOpen)}
+                aria-label={t("header.langAria")}
+                className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white
+                          text-[15px] font-semibold px-4 py-2.5 rounded-lg transition-colors"
+              >
+                {LANG_LABEL[lang]}
+                <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+              </button>
+              {langOpen && (
+                <div className="absolute right-0 top-12 bg-white rounded-xl shadow-lg p-1 z-50 min-w-[96px]">
+                  {LANGS.map((l) => (
+                    <button
+                      key={l}
+                      onClick={() => { setLang(l); setLangOpen(false); }}
+                      className="w-full text-left px-4 py-2.5 text-[15px] hover:bg-gray-50 font-medium transition-colors rounded-lg"
+                      style={{ color: l === lang ? "#2F6FED" : "#1F2A24" }}
+                    >
+                      {LANG_LABEL[l]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={onHistory}
+              title={t("header.history")}
+              className="text-white/80 hover:text-white p-2.5 rounded-lg hover:bg-white/10 transition-colors"
+            >
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <circle cx="11" cy="11" r="9" />
+                <path d="M11 6v5l3 3" />
+              </svg>
+            </button>
+
+            <button
+              onClick={onProfile}
+              title={user ? user.full_name || user.email : t("header.loginRegister")}
+              className="relative flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/10 transition-colors flex-shrink-0"
+            >
+              {user?.full_name && (
+                <span className="hidden md:inline-block text-white/90 text-[15px] font-medium whitespace-nowrap max-w-[180px] truncate">
+                  {t("header.welcome")} {user.full_name}
+                </span>
+              )}
+              <span className="relative flex-shrink-0" style={{ width: 32, height: 32 }}>
+                {user?.avatar ? (
+                  <img src={resolveMediaUrl(user.avatar) ?? undefined} alt="" className="rounded-full object-cover" style={{ width: 32, height: 32 }} />
+                ) : (
+                  <svg width="30" height="30" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="text-white/80">
+                    <circle cx="11" cy="8" r="4" />
+                    <path d="M3 20c0-4.4 3.6-8 8-8s8 3.6 8 8" />
+                  </svg>
+                )}
+                {user && <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full" style={{ background: "#5CEAB2" }} />}
+              </span>
+            </button>
+          </div>
+          </div>
+
+        {/* Мобільне випадне меню — ті самі 3 пункти, лише вертикальним списком */}
+        {mobileMenuOpen && (
+          <div className="w-full text-left px-6 py-4.5 text-white font-semibold text-base uppercase tracking-wide border-t border-white/10 hover:bg-white/5 active:bg-white/10 transition-colors" style={{ background: "#005e00" }}>
+            {navItems.map((item) => (
+              <button
+                key={item.key}
+                onClick={() => handleNavClick(item.onClick)}
+                className="w-full text-left px-6 py-4 text-white font-semibold text-sm uppercase tracking-wide border-t border-white/10 hover:bg-white/5 transition-colors"
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </header>
   );
 }
-
 // ─── Hero / Short search ────────────────────────────────────────────────────────
 function Hero({
   filters,
   onFiltersChange,
   onSearch,
   onOpenFilters,
+  refs,
 }: {
   filters: Filters;
   onFiltersChange: (patch: Partial<Filters>) => void;
   onSearch: () => void;
   onOpenFilters: () => void;
+  refs: RefLists;
 }) {
   const { t } = useI18n();
   const today = new Date().toISOString().split("T")[0];
+
+  const NIGHTS_PRESETS = [
+    { min: "", max: "", label: t("common.any.f") },
+    { min: "1", max: "3", label: "1–3" },
+    { min: "4", max: "6", label: "4–6" },
+    { min: "7", max: "9", label: "7–9" },
+    { min: "10", max: "14", label: "10–14" },
+    { min: "15", max: "", label: "15+" },
+  ];
+  const nightsKey = (min: string, max: string) => `${min}|${max}`;
+
+  // Якщо обидві дати вибрані — рахуємо точну к-сть ночей і показуємо
+  // її як окремий пункт (навіть якщо вона не влучає в жоден готовий діапазон),
+  // замінюючи вибір "від-до" на конкретне число.
+  const exactNights = useMemo(() => {
+    if (!filters.dateFrom || !filters.dateTo) return null;
+    const from = new Date(filters.dateFrom);
+    const to = new Date(filters.dateTo);
+    const diff = Math.round((to.getTime() - from.getTime()) / 86400000);
+    return diff > 0 ? diff : null;
+  }, [filters.dateFrom, filters.dateTo]);
+
+  const nightsOptions = exactNights
+    ? [{ min: String(exactNights), max: String(exactNights), label: `${exactNights} ${t("hero.nightsShort")}` }]
+    : NIGHTS_PRESETS;
+
+  const selectedNightsKey = exactNights
+    ? nightsKey(String(exactNights), String(exactNights))
+    : nightsKey(filters.nightsMin, filters.nightsMax);
+  const advancedCount = [
+    filters.countryId, filters.goalCityId, filters.tourOperatorId, filters.resort,
+    filters.meal, filters.starsMin, filters.priceMin, filters.priceMax, filters.currency,
+  ].filter(Boolean).length + (filters.children ? 1 : 0) + (filters.hotOnly ? 1 : 0);
+
   return (
     <section
-      className="relative w-full flex flex-col items-center justify-center px-4" style={{ minHeight: 480, borderRadius: "0 0 20px 20px", overflow: "hidden" }}>
+      className="relative w-full flex flex-col items-center justify-center px-4"
+      style={{ minHeight: 480, borderRadius: "0 0 20px 20px", overflow: "hidden" }}
+    >
       <img src={heroPhoto} alt="Coastal resort aerial view" className="absolute inset-0 w-full h-full object-cover" />
       <div className="absolute inset-0" style={{ background: "rgba(15,30,20,0.45)" }} />
 
       <div className="relative z-10 flex flex-col items-center w-full">
         <h1
           style={{ fontFamily: "Fraunces, serif", fontWeight: 700, color: "#fff", textShadow: "0 2px 12px rgba(0,0,0,0.4)" }}
-          className="mb-8 text-center leading-tight text-3xl sm:text-4xl md:text-[42px]">
+          className="mb-8 text-center leading-tight text-3xl sm:text-4xl md:text-[42px]"
+        >
           {t("hero.title")}
         </h1>
 
-        <div className="w-full" style={{ maxWidth: 1040, background: "rgba(255,255,255,0.97)", borderRadius: 20, padding: "28px 32px", boxShadow: "0 8px 40px rgba(0,0,0,0.22)", border: "1px solid #E2E4DF", marginBottom: 20 }}>
-          <div className="flex flex-col sm:flex-row gap-4 sm:flex-wrap">
-            <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
+        <div className="w-full" style={{ maxWidth: 1100, background: "rgba(255,255,255,0.97)", borderRadius: 20, padding: "24px 32px", boxShadow: "0 8px 40px rgba(0,0,0,0.22)", border: "1px solid #E2E4DF", marginBottom: 20 }}>
+          <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: "#1F7A53" }}>
+            {t("hero.eyebrow")}
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4 items-end">
+            {/* КУДА — 3 колонки */}
+            <div className="flex flex-col gap-1 lg:col-span-3">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("hero.where")}</label>
               <input
                 value={filters.destination}
                 onChange={(e) => onFiltersChange({ destination: e.target.value.replace(/[0-9]/g, "") })}
                 placeholder={t("hero.wherePlaceholder")}
-                className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all"
+                className="h-14 w-full px-4 rounded-[10px] border font-medium focus:outline-none focus:ring-2 transition-all"
                 style={{ border: "1px solid #E2E4DF", fontSize: 15 }}
               />
             </div>
 
-            <div className="flex flex-col gap-1" style={{ minWidth: 180 }}>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                {t("hero.date")}
-              </label>
-              <div className="relative">
+            {/* ИЗ ГОРОДА — 2 колонки */}
+            <div className="flex flex-col gap-1 lg:col-span-2">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("hero.from")}</label>
+              <select
+                value={filters.departureCityId}
+                onChange={(e) => onFiltersChange({ departureCityId: e.target.value })}
+                className="h-14 w-full px-4 rounded-[10px] border font-medium focus:outline-none focus:ring-2 transition-all appearance-none bg-white"
+                style={{ border: "1px solid #E2E4DF", fontSize: 15 }}
+              >
+                <option value="">{t("common.any.m")}</option>
+                {refs.departureCities.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* ДАТА — 3 колонки, на мобиле обе даты в ряд без переполнения */}
+            <div className="flex flex-col gap-1 sm:col-span-2 lg:col-span-3">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("hero.date")}</label>
+              <div className="flex items-center gap-2">
                 <input
                   type="date"
                   min={today}
                   value={filters.dateFrom}
-                  onChange={(e) => onFiltersChange({ dateFrom: e.target.value })}
-                  className="h-14 px-4 pr-5 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all w-full appearance-none"
+                  onChange={(e) => {
+                    const newFrom = e.target.value;
+                    const patch: Partial<Filters> = { dateFrom: newFrom };
+                    if (filters.dateTo && filters.dateTo <= newFrom) patch.dateTo = "";
+                    onFiltersChange(patch);
+                  }}
+                  className="h-14 flex-1 min-w-0 px-3 rounded-[10px] border font-medium focus:outline-none focus:ring-2 transition-all appearance-none"
+                  style={{ border: "1px solid #E2E4DF", fontSize: 15 }}
+                />
+                <span className="flex-shrink-0" style={{ color: "#66716B" }}>—</span>
+                <input
+                  type="date"
+                  min={filters.dateFrom || today}
+                  value={filters.dateTo}
+                  onChange={(e) => onFiltersChange({ dateTo: e.target.value })}
+                  className="h-14 flex-1 min-w-0 px-3 rounded-[10px] border font-medium focus:outline-none focus:ring-2 transition-all appearance-none"
                   style={{ border: "1px solid #E2E4DF", fontSize: 15 }}
                 />
               </div>
             </div>
 
-            <div className="flex flex-col gap-1" style={{ minWidth: 160 }}>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("hero.stars")}</label>
+            {/* НОЧИ — теперь с label, поэтому не «всплывает» над рядом */}
+            <div className="flex flex-col gap-1 lg:col-span-2">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("hero.nights")}</label>
               <select
-                value={filters.starsMin}
-                onChange={(e) => onFiltersChange({ starsMin: e.target.value })}
-                className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all appearance-none bg-white"
+                value={selectedNightsKey}
+                disabled={!!exactNights}
+                onChange={(e) => {
+                  const preset = nightsOptions.find((p) => nightsKey(p.min, p.max) === e.target.value);
+                  if (preset) onFiltersChange({ nightsMin: preset.min, nightsMax: preset.max });
+                }}
+                className="h-14 w-full px-4 rounded-[10px] border font-medium focus:outline-none focus:ring-2 transition-all appearance-none bg-white disabled:opacity-60 disabled:cursor-not-allowed"
                 style={{ border: "1px solid #E2E4DF", fontSize: 15 }}
               >
-                <option value="">{t("common.any.pl")}</option>
-                {STAR_OPTIONS.map((n) => (
-                  <option key={n} value={n}>{n} ★</option>
+                {nightsOptions.map((p) => (
+                  <option key={nightsKey(p.min, p.max)} value={nightsKey(p.min, p.max)}>{p.label}</option>
                 ))}
               </select>
             </div>
 
-            <div className="flex flex-col gap-1" style={{ minWidth: 160 }}>
+            {/* ЧЕЛОВЕК — 2 колонки */}
+            <div className="flex flex-col gap-1 lg:col-span-2">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("hero.people")}</label>
               <Stepper value={filters.adults} onChange={(v) => onFiltersChange({ adults: v })} />
             </div>
 
-            <div className="flex flex-col justify-end">
-              <button onClick={onSearch} className="h-14 px-8 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90 active:scale-95 w-full sm:w-auto" style={{ background: "#2F6FED", minWidth: 140 }}>
+            {/* ПОИСК — своя строка во всю ширину сетки, кнопка не жмётся в угол */}
+            <div className="lg:col-span-12 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
+              <button
+                onClick={onOpenFilters}
+                className="text-sm font-semibold transition-opacity hover:opacity-70 text-left order-2 sm:order-1"
+                style={{ color: "#2F6FED" }}
+              >
+                {t("hero.advancedSearch")}{advancedCount > 0 && ` (${advancedCount})`}
+              </button>
+              <button
+                onClick={onSearch}
+                className="h-14 px-10 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90 active:scale-95 w-full sm:w-auto order-1 sm:order-2"
+                style={{ background: "#2F6FED", minWidth: 180 }}
+              >
                 {t("hero.search")}
               </button>
             </div>
           </div>
-
-          <button onClick={onOpenFilters} className="mt-3 text-sm font-medium transition-opacity hover:opacity-70" style={{ color: "#2F6FED" }}>
-            {t("hero.advancedSearch")}
-          </button>
         </div>
       </div>
     </section>
+  );
+}
+
+function TravelSubTabs({ active }: { active: "hotels" | "flights" }) {
+  const navigate = useNavigate();
+  const { t } = useI18n();
+  return (
+    <div className="flex gap-2 mb-6 border-b" style={{ borderColor: "#E2E4DF" }}>
+      {(["hotels", "flights"] as const).map((tab) => (
+        <button
+          key={tab}
+          onClick={() => navigate(tab === "hotels" ? "/hotels" : "/flights")}
+          className="px-4 py-3 text-sm font-semibold transition-colors"
+          style={{
+            color: active === tab ? "#2F6FED" : "#66716B",
+            borderBottom: active === tab ? "2px solid #2F6FED" : "2px solid transparent",
+          }}
+        >
+          {tab === "hotels" ? t("travel.tabHotels") : t("travel.tabFlights")}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -1064,6 +1259,9 @@ function About({ pinnedReviews, pinnedReviewsLoading }: { pinnedReviews: Review[
             <p>{t("about.p1")}</p>
             <p>{t("about.p2")}</p>
             <p>{t("about.p3")}</p>
+            <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }} className="mb-6">{t("about.p4")}</h3>
+            <p>{t("about.p5")}</p>
+            <p>{t("about.p6")}</p>
           </div>
           <a href="https://invite.viber.com/?g2=AQAhZKmWY3FWs1PKlcTVAB%2BQb3duaaxB%2B7RLFCMyfS4NB5iCuwm4i6QGCsD1DRtn" className="inline-flex items-center gap-2 mt-6 font-semibold text-sm transition-opacity hover:opacity-80" style={{ color: "#2F6FED" }}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="#7360F2">
@@ -1100,7 +1298,11 @@ function About({ pinnedReviews, pinnedReviewsLoading }: { pinnedReviews: Review[
 }
 
 // ─── Footer ───────────────────────────────────────────────────────────────────
-function Footer() {
+function Footer({
+  onLegal,
+}:{
+  onLegal: () => void;
+}) {
   const { t } = useI18n();
   return (
     <footer style={{ background: "#00ab00" }} className="w-full">
@@ -1108,57 +1310,22 @@ function Footer() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 text-white">
           <div>
             <div className="mt-1  flex flex-col sm:flex-row items-center sm: gap-2 text-xs" style={{ borderBottom: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.6)", padding: 20 }}>
-              <svg
-                width="64"
-                height="64"
-                viewBox="0 0 64 64"
-                xmlns="http://www.w3.org/2000/svg"
-                aria-label={t("header.logoAlt")}
-              >
-
+              <svg width="44" height="44" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-label={t("header.logoAlt")}>
                 <path
-                  d="M14 15
-                    C7 21 5 32 8 42
-                    C11 52 20 58 32 58
-                    C44 58 53 52 56 42
-                    C59 32 57 21 50 15
-                    L44 20
-                    C49 25 51 33 48 40
-                    C46 47 40 51 32 51
-                    C24 51 18 47 16 40
-                    C13 33 15 25 20 20
-                    Z"
-                  fill="#2F6FED"/>
-
-
-                <circle cx="13" cy="29" r="2" fill="#F7F8F6"/>
-                <circle cx="15" cy="40" r="2" fill="#F7F8F6"/>
-                <circle cx="23" cy="51" r="2" fill="#F7F8F6"/>
-                <circle cx="41" cy="51" r="2" fill="#F7F8F6"/>
-                <circle cx="49" cy="40" r="2" fill="#F7F8F6"/>
-                <circle cx="51" cy="29" r="2" fill="#F7F8F6"/>
-
-
+                  d="M14 15 C7 21 5 32 8 42 C11 52 20 58 32 58 C44 58 53 52 56 42 C59 32 57 21 50 15 L44 20 C49 25 51 33 48 40 C46 47 40 51 32 51 C24 51 18 47 16 40 C13 33 15 25 20 20 Z"
+                  fill="#5CEAB2"
+                />
+                <circle cx="13" cy="29" r="2" fill="#F7F8F6" />
+                <circle cx="15" cy="40" r="2" fill="#F7F8F6" />
+                <circle cx="23" cy="51" r="2" fill="#F7F8F6" />
+                <circle cx="41" cy="51" r="2" fill="#F7F8F6" />
+                <circle cx="49" cy="40" r="2" fill="#F7F8F6" />
+                <circle cx="51" cy="29" r="2" fill="#F7F8F6" />
+                <path d="M47 24 C49 20 51 17 54 14" fill="none" stroke="#FFB800" strokeWidth="2.5" strokeLinecap="round" />
                 <path
-                  d="M47 24 C49 20 51 17 54 14"
-                  fill="none"
-                  stroke="#FFB800"
-                  stroke-width="2.5"
-                  stroke-linecap="round"/>
-
-
-                <path
-                  d="M54 14
-                    C48 13 46 8 50 6
-                    C53 4 56 6 57 9
-                    C58 5 62 4 64 7
-                    C66 11 62 14 59 15
-                    C63 15 65 18 63 21
-                    C60 24 57 20 56 18
-                    C56 22 53 24 50 22
-                    C47 20 49 16 52 15
-                    Z"
-                  fill="#FFB800"/>
+                  d="M54 14 C48 13 46 8 50 6 C53 4 56 6 57 9 C58 5 62 4 64 7 C66 11 62 14 59 15 C63 15 65 18 63 21 C60 24 57 20 56 18 C56 22 53 24 50 22 C47 20 49 16 52 15 Z"
+                  fill="#FFB800"
+                />
               </svg>
               <span style={{ fontFamily: "Fraunces, serif", fontWeight: 600, fontSize: 16 }}>{t("footer.brand")}</span>
             </div>
@@ -1170,6 +1337,16 @@ function Footer() {
               <a href="tel:+380441234567" className="block hover:text-white transition-colors">+38 (044) 123-45-67</a>
               <a href="tel:+380671234567" className="block hover:text-white transition-colors">+38 (067) 123-45-67</a>
               <a href="mailto:info@touragency.ua" className="block hover:text-white transition-colors">info@touragency.ua</a>
+              <button
+                onClick={onLegal} // или () => navigate('/legal')
+                title={t("legal.title")}
+                className="flex items-center gap-2 text-sm text-white/80 hover:text-white transition-colors group"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="group-hover:stroke-blue transition-colors">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+                {t("legal.title")}
+              </button>
             </div>
           </div>
           <div>
@@ -1189,21 +1366,92 @@ function Footer() {
     </footer>
   );
 }
+function LegalPage() {
+  const { t } = useI18n();
+  const [activeTab, setActiveTab] = useState<"privacy" | "terms">("privacy");
 
+  return (
+    <div className="max-w-[900px] mx-auto px-6 py-14">
+      <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }} className="mb-6">
+        {t("legal.title")}
+      </h1>
+
+      <div style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16, padding: "32px 20px" }}>
+        
+        {/* Перемикач вкладок */}
+        <div className="flex gap-6 border-b mb-8 overflow-x-auto" style={{ borderColor: "#E2E4DF" }}>
+          <button
+            onClick={() => setActiveTab("privacy")}
+            className="pb-3 text-sm font-semibold whitespace-nowrap transition-colors"
+            style={{ 
+              color: activeTab === "privacy" ? "#2F6FED" : "#66716B",
+              borderBottom: activeTab === "privacy" ? "2px solid #2F6FED" : "2px solid transparent" 
+            }}
+          >
+            {t("legal.tabPrivacy")}
+          </button>
+          <button
+            onClick={() => setActiveTab("terms")}
+            className="pb-3 text-sm font-semibold whitespace-nowrap transition-colors"
+            style={{ 
+              color: activeTab === "terms" ? "#2F6FED" : "#66716B",
+              borderBottom: activeTab === "terms" ? "2px solid #2F6FED" : "2px solid transparent" 
+            }}
+          >
+            {t("legal.tabTerms")}
+          </button>
+        </div>
+
+        {/* Контент */}
+        <div className="text-sm sm:text-base leading-relaxed" style={{ color: "#4A5550" }}>
+          
+          {/* Політика конфіденційності */}
+          {activeTab === "privacy" && (
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold mb-2" style={{ color: "#1F2A24" }}>
+                {t("legal.privacyHeading")}
+              </h2>
+              <p>{t("legal.privacyText")}</p>
+              <p className="italic" style={{ color: "#9CA3AF" }}>
+                {t("legal.privacyPlaceholder")}
+              </p>
+            </div>
+          )}
+
+          {/* Умови використання */}
+          {activeTab === "terms" && (
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold mb-2" style={{ color: "#1F2A24" }}>
+                {t("legal.termsHeading")}
+              </h2>
+              <p>{t("legal.termsText")}</p>
+              <p className="italic" style={{ color: "#9CA3AF" }}>
+                {t("legal.termsPlaceholder")}
+              </p>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
 // ─── Booking Modal ─────────────────────────────────────────────────────────────
 function BookingModal({
   tourId, tourName, tourNights, user, preferredDateFrom, preferredDateTo,
-  partyAdults, partyChildren, onClose,
+  partyAdults, partyChildren, onClose, error, countryfrom
 }: {
   tourId: number | null;
   tourName: string;
   tourNights: number | null;
   user: User | null;
   preferredDateFrom: string;
+  countryfrom: string;
   preferredDateTo: string;
   partyAdults: number;
   partyChildren: boolean;
   onClose: () => void;
+  error?: boolean;
 }) {
   const { t } = useI18n();
   const [success, setSuccess] = useState(false);
@@ -1220,13 +1468,25 @@ function BookingModal({
   // вручну другу дату вводити не треба. Якщо кількість ночей з якоїсь
   // причини невідома — підстраховуємось раніше введеним preferredDateTo.
   const returnDate = tourNights != null ? addNights(departureDate, tourNights) : preferredDateTo;
-
+  const initialCountry = typeof countryfrom === "string" ? countryfrom : "";
   const missingFields = !email.trim() || !phone.trim() || !name.trim();
   const canSubmit = !missingFields && !submitting;
   const [preferredContact, setPreferredContact] = useState<"viber" | "telegram">("telegram");
   const [mouseDownOnOverlay, setMouseDownOnOverlay] = useState(false);
+  const [country, setCountry] = useState(initialCountry);
 
-  async function submit() {
+  useEffect(() => {
+    if (typeof countryfrom === "string") {
+      setCountry("");
+    } else if (Array.isArray(countryfrom)) {
+      const items = countryfrom as RefItem[];
+      setCountry("");
+    } else {
+      setCountry("");
+    }
+  }, [countryfrom]);
+
+async function submit() {
     if (!canSubmit) return;
     setSubmitting(true);
     setSubmitError(null);
@@ -1237,6 +1497,7 @@ function BookingModal({
         body: JSON.stringify({
           tour: tourId,
           tour_name: tourName,
+          country: country || null, // <--- Добавлено здесь
           email, phone, full_name: name,
           preferred_contact: preferredContact,
           preferred_date_from: departureDate || null,
@@ -1280,10 +1541,30 @@ function BookingModal({
             </div>
 
             <div className="space-y-4">
+            {/* Поле, которое показывает название тура ИЛИ "Загальний запит" */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("booking.tour")}</label>
-                <div className="h-13 px-4 flex items-center rounded-[10px] text-sm font-medium" style={{ background: "#F7F8F6", border: "1px solid #E2E4DF", height: 52 }}>{tourName}</div>
+                <div className="h-13 px-4 flex items-center rounded-[10px] text-sm font-medium" style={{ background: "#F7F8F6", border: "1px solid #E2E4DF", height: 52 }}>
+                  {tourName || t("booking.generalRequest")}
+                </div>
               </div>
+
+              {/* Поле для ввода страны - появляется ТОЛЬКО если это общий запрос (!tourName) */}
+              {!tourName && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                    {t("booking.country")} {/* Можете заменить на t("booking.country"), если есть такой перевод */}
+                  </label>
+                  <input
+                    type="text"
+                    value={country}
+                    placeholder="Введіть країну..."
+                    onChange={(e) => setCountry(e.target.value)}
+                    className="w-full h-13 px-4 rounded-[10px] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                    style={{ border: "1px solid #E2E4DF", height: 52 }}
+                  />
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -1908,6 +2189,160 @@ function ResetPasswordPage() {
     </div>
   );
 }
+function HotelsSearchPage() {
+  const { t } = useI18n();
+  const today = new Date().toISOString().split("T")[0];
+  const [destination, setDestination] = useState("");
+  const [checkIn, setCheckIn] = useState("");
+  const [checkOut, setCheckOut] = useState("");
+  const [guests, setGuests] = useState(2);
+  const [submitted, setSubmitted] = useState(false);
+
+  return (
+    <div className="max-w-[900px] mx-auto px-6 py-14">
+      <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }} className="mb-6">
+        {t("travel.hotelsTitle")}
+      </h1>
+
+      <TravelSubTabs active="hotels" />
+
+      <div style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16, padding: 20 }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="lg:col-span-2 flex flex-col gap-1">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("travel.destinationLabel")}</label>
+            <input
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+              placeholder={t("travel.destinationPlaceholder")}
+              className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all"
+              style={{ border: "1px solid #E2E4DF", fontSize: 15 }}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("travel.checkIn")}</label>
+            <input type="date" min={today} value={checkIn} onChange={(e) => setCheckIn(e.target.value)} className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all" style={{ border: "1px solid #E2E4DF", fontSize: 15 }} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("travel.checkOut")}</label>
+            <input type="date" min={checkIn || today} value={checkOut} onChange={(e) => setCheckOut(e.target.value)} className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all" style={{ border: "1px solid #E2E4DF", fontSize: 15 }} />
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-start sm:items-end gap-4 mt-4">
+          <div className="flex flex-col gap-1" style={{ minWidth: 160 }}>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("travel.guests")}</label>
+            <Stepper value={guests} onChange={setGuests} />
+          </div>
+          <button
+            onClick={() => setSubmitted(true)}
+            className="h-14 px-8 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90 active:scale-95 w-full sm:w-auto"
+            style={{ background: "#2F6FED" }}
+          >
+            {t("hero.search")}
+          </button>
+        </div>
+
+        {submitted && <p className="mt-4 text-sm" style={{ color: "#1F7A53" }}>{t("travel.comingSoon")}</p>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Flights Page ───────────────────────────────────────────────────────
+const FLIGHT_CLASSES = ["economy", "business"] as const;
+
+function FlightsSearchPage({
+  filters,
+  onFiltersChange,
+  onSearch,
+  onOpenFilters,
+  refs,
+}: {
+  filters: Filters;
+  onFiltersChange: (patch: Partial<Filters>) => void;
+  onSearch: () => void;
+  onOpenFilters: () => void;
+  refs: RefLists;
+}) {
+  const { t } = useI18n();
+  const today = new Date().toISOString().split("T")[0];
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [dateThere, setDateThere] = useState("");
+  const [dateBack, setDateBack] = useState("");
+  const [passengers, setPassengers] = useState(1);
+  const [flightClass, setFlightClass] = useState<typeof FLIGHT_CLASSES[number]>("economy");
+  const [baggageOnly, setBaggageOnly] = useState(false);
+  const [noTransfers, setNoTransfers] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  return (
+    <div className="max-w-[1000px] mx-auto px-6 py-14">
+      <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }} className="mb-6">
+        {t("travel.flightsTitle")}
+      </h1>
+
+      <TravelSubTabs active="flights" />
+
+      <div style={{ background: "#fff", border: "1px solid #E2E4DF", borderRadius: 16, padding: 20 }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("hero.from")}</label>
+              <select
+                value={filters.departureCityId}
+                onChange={(e) => onFiltersChange({ departureCityId: e.target.value })}
+                className="h-14 w-full px-4 rounded-[10px] border font-medium focus:outline-none focus:ring-2 transition-all appearance-none bg-white"
+                style={{ border: "1px solid #E2E4DF", fontSize: 15 }}
+              >
+                <option value="">{t("common.any.m")}</option>
+                {refs.departureCities.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("travel.to")}</label>
+            <input value={to} onChange={(e) => setTo(e.target.value)} placeholder={t("travel.toPlaceholder")} className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all" style={{ border: "1px solid #E2E4DF", fontSize: 15 }} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("travel.flightClass")}</label>
+            <select value={flightClass} onChange={(e) => setFlightClass(e.target.value as typeof flightClass)} className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all appearance-none bg-white" style={{ border: "1px solid #E2E4DF", fontSize: 15 }}>
+              <option value="economy">{t("travel.classEconomy")}</option>
+              <option value="business">{t("travel.classBusiness")}</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("travel.there")}</label>
+            <input type="date" min={today} value={dateThere} onChange={(e) => setDateThere(e.target.value)} className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all" style={{ border: "1px solid #E2E4DF", fontSize: 15 }} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("travel.back")}</label>
+            <input type="date" min={dateThere || today} value={dateBack} onChange={(e) => setDateBack(e.target.value)} className="h-14 px-4 rounded-[10px] border text-sm font-medium focus:outline-none focus:ring-2 transition-all" style={{ border: "1px solid #E2E4DF", fontSize: 15 }} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("travel.passengers")}</label>
+            <Stepper value={passengers} onChange={setPassengers} />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-6 mt-4">
+          <Checkbox checked={baggageOnly} onChange={setBaggageOnly} label={t("travel.baggageOnly")} />
+          <Checkbox checked={noTransfers} onChange={setNoTransfers} label={t("travel.noTransfers")} />
+        </div>
+
+        <button
+          onClick={() => setSubmitted(true)}
+          className="h-14 px-8 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90 active:scale-95 w-full sm:w-auto mt-5"
+          style={{ background: "#2F6FED" }}
+        >
+          {t("hero.search")}
+        </button>
+
+        {submitted && <p className="mt-4 text-sm" style={{ color: "#1F7A53" }}>{t("travel.comingSoon")}</p>}
+      </div>
+    </div>
+  );
+}
 
 // ─── Search Results Page ───────────────────────────────────────────────────────
 const PAGE_SIZE = 5;
@@ -2283,6 +2718,8 @@ export default function AppContent() {
   const [userLoading, setUserLoading] = useState(true);
   const [pendingBooking, setPendingBooking] = useState(false);
 
+  
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -2390,12 +2827,30 @@ export default function AppContent() {
     setModal("booking");
   };
 
+  const openGeneralRequest = () => {
+  setSelectedTour(null);
+  if (!user) {
+    setPendingBooking(true);
+    setModal("profile");
+    return;
+  }
+  setModal("booking");
+};
+
   const openHistory = () => {
     if (!user) {
       setModal("profile");
       return;
     }
     navigate("/history");
+  };
+
+  const openlegal = () => {
+    if (!user) {
+      setModal("profile");
+      return;
+    }
+    navigate("/legal");
   };
 
   const openDetails = (tour: Tour) => {
@@ -2413,7 +2868,7 @@ export default function AppContent() {
 
   return (
     <div className="min-h-full flex flex-col" style={{ background: "#F7F8F6" }}>
-      <Header onProfile={openProfile} onOpenFilters={openFilters} onHistory={openHistory} user={user} />
+      <Header onProfile={openProfile} onOpenFilters={openFilters} onHistory={openHistory} onGeneralRequest={openGeneralRequest} user={user} />
 
       {toursError && (
         <div className="max-w-[1200px] mx-auto px-6 mt-4 w-full">
@@ -2427,12 +2882,15 @@ export default function AppContent() {
             path="/"
             element={
               <>
-                <Hero filters={filters} onFiltersChange={setFilters} onSearch={runSearch} onOpenFilters={openFilters} />
+                <Hero filters={filters} onFiltersChange={setFilters} onSearch={runSearch} onOpenFilters={openFilters} refs={refs} />
                 <HotTours tours={hotTours} loading={toursLoading} onBook={openBooking} onDetails={openDetails} />
                 <About pinnedReviews={pinnedReviews} pinnedReviewsLoading={pinnedReviewsLoading} />
               </>
             }
           />
+          <Route path="/hotels" element={<HotelsSearchPage />} />
+          <Route path="/legal" element={<LegalPage />} />
+          <Route path="/flights" element={<FlightsSearchPage filters={filters} onFiltersChange={setFilters} onOpenFilters={openFilters} onSearch={runSearch} refs={refs} />} />
           <Route path="/tour/:id" element={<TourDetailsPage onBook={openBooking} user={user} onRequireAuth={openProfile} />} />
           <Route
             path="/results"
@@ -2446,12 +2904,13 @@ export default function AppContent() {
         </Routes>
       </main>
 
-      <Footer />
+      <Footer onLegal={openlegal}/>
       {modal === "booking" && (
         <BookingModal
           tourId={selectedTour?.id ?? null}
           tourName={selectedTour?.name ?? ""}
           tourNights={selectedTour?.nights ?? null}
+          countryfrom={countries[0]?.name || ""}
           user={user}
           preferredDateFrom={filters.dateFrom}
           preferredDateTo={filters.dateTo}

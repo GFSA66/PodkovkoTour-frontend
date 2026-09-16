@@ -4,14 +4,14 @@ import type { ReactNode } from "react";
 // ─── Мова інтерфейсу ──────────────────────────────────────────────────────────
 // Перемикач суто фронтовий: бекенд нічого не знає про мову, дані з API
 // (назви турів, країн, статуси заявок) приходять як є і не перекладаються.
-export type Lang = "uk" | "ru";
+export type Lang = "uk" | "en";
 
 const STORAGE_KEY = "app.lang";
 
-export const LOCALE: Record<Lang, string> = { uk: "uk-UA", ru: "ru-RU" };
+export const LOCALE: Record<Lang, string> = { uk: "uk-UA", en: "en-EN" };
 // Те, що показуємо в кнопці хедера.
-export const LANG_LABEL: Record<Lang, string> = { uk: "UA", ru: "RU" };
-export const LANGS: Lang[] = ["uk", "ru"];
+export const LANG_LABEL: Record<Lang, string> = { uk: "UA", en: "EN" };
+export const LANGS: Lang[] = ["uk", "en"];
 
 // ─── Словник ──────────────────────────────────────────────────────────────────
 // Ключі однакові для обох мов; {змінні} підставляються через другий аргумент t().
@@ -30,15 +30,46 @@ const uk = {
   "common.loadingTours": "Завантаження турів…",
   "common.loadingReviews": "Завантаження відгуків…",
   "common.tourMeta": "{nights} ночей · {country} · {meal}",
-
+  
   // Хедер
+  "header.menuAria": "Меню навігації",
   "header.logoAlt": "Логотип",
   "header.brand": "На головну",
-  "header.advancedFilter": "Розширений фільтр",
+  "header.advancedFilter": "Тури",
   "header.history": "Історія",
   "header.loginRegister": "Увійти / Зареєструватися",
   "header.langAria": "Мова інтерфейсу",
   "header.welcome": "Вітаємо",
+  "header.wantTourCta": "Хочу в тур!",
+  "header.wantTourCtaShort": "Хочу в тур",
+  "header.tourPickupContact": "Контакт підбору туру",
+  "header.workHours": "Пн–Нд: 09:00–20:00",
+  "header.support247": "Підтримка туристів 24/7",
+  "header.navFlights": "Авіабілети",
+  "booking.generalRequest": "Підбір туру (без конкретного готелю)",
+  "header.navHotels": "Готелі",
+  "travel.tabHotels": "Готелі",
+  "travel.tabFlights": "Авіаквитки",
+  "travel.hotelsTitle": "Самостійне бронювання готелів",
+  "travel.flightsTitle": "Авіаквитки",
+  "travel.destinationLabel": "Куди плануєте вирушити",
+  "travel.destinationPlaceholder": "Введіть назву міста, курорту або готелю",
+  "travel.checkIn": "Дата заїзду",
+  "travel.checkOut": "Дата виїзду",
+  "travel.guests": "Гості",
+  "travel.from": "Виліт з",
+  "travel.fromPlaceholder": "Місто або аеропорт вильоту",
+  "travel.to": "Куди",
+  "travel.toPlaceholder": "Країна, місто чи аеропорт",
+  "travel.flightClass": "Клас перельоту",
+  "travel.classEconomy": "Економ",
+  "travel.classBusiness": "Бізнес",
+  "travel.there": "Туди",
+  "travel.back": "Назад",
+  "travel.passengers": "Пасажири",
+  "travel.baggageOnly": "Тільки з багажем",
+  "travel.noTransfers": "Без пересадок",
+  "travel.comingSoon": "Цей розділ ще в розробці — скоро тут можна буде знайти та забронювати самостійно.",
 
   // Головний екран
   "hero.title": "Знайдіть свій ідеальний відпочинок",
@@ -49,7 +80,10 @@ const uk = {
   "hero.people": "Кількість осіб",
   "hero.search": "Пошук",
   "hero.advancedSearch": "Розширений пошук →",
-
+  "hero.eyebrow": "Пошук туру",
+  "hero.from": "Із міста",
+  "hero.nights": "Тривалість",
+  "hero.nightsShort": "ночей",
   // Розширений фільтр
   "filters.title": "Розширений пошук",
   "filters.destination": "Готель / напрямок",
@@ -113,13 +147,19 @@ const uk = {
   "hot.empty": "Гарячих турів поки немає.",
 
   // Про нас
-  "about.title": "Про турагента",
+  "about.title": "Про Marina World Travel",
   "about.p1":
-    "Ми — команда досвідчених фахівців із туристичного бізнесу з понад 12-річним досвідом роботи на ринку. Щороку ми допомагаємо тисячам сімей та пар здійснити мрію про ідеальну відпустку.",
+    "Marina World Travel — туристичне агентство, яке допомагає організувати подорожі легко, комфортно та без зайвих турбот.",
   "about.p2":
-    "Наш підхід простий: глибоке знання напрямків, чесні ціни та особистий супровід на кожному етапі — від вибору готелю до повернення додому.",
+    "Ми підбираємо тури, готелі, авіаквитки та трансфери відповідно до ваших побажань, бюджету та формату відпочинку.",
   "about.p3":
-    "Ми співпрацюємо лише з перевіреними операторами та готелями, щоб ваша подорож була безтурботною та незабутньою.",
+    "Працюємо з надійними туристичними партнерами та туроператорами, щоб запропонувати клієнтам актуальні варіанти подорожей.",
+  "about.p4":
+    "Наш принцип",
+  "about.p5":
+    "Індивідуальний підхід до кожного туриста.",
+  "about.p6":
+    "Ми не просто пропонуємо тур — ми допомагаємо знайти саме той варіант відпочинку, який підійде вам.",
   "about.viber": "Написати нам у Viber",
   "about.reviewsEmpty": "Незабаром тут з'являться відгуки наших клієнтів.",
 
@@ -147,6 +187,17 @@ const uk = {
   "booking.submit": "Надіслати заявку",
   "booking.error": "Не вдалося відправити заявку. Спробуйте ще раз.",
   "booking.successTitle": "Вашу заявку надіслано менеджеру, очікуйте зворотного зв'язку",
+  "booking.country": "Країна",
+
+  "legal.title": "Юридична інформація",
+  "legal.tabPrivacy": "Політика конфіденційності",
+  "legal.tabTerms": "Умови використання (Оферта)",
+  "legal.privacyHeading": "1. Загальні положення",
+  "legal.privacyText": "Ця сторінка є заглушкою. Тут буде розміщено текст вашої Політики конфіденційності. Ви зможете описати, які персональні дані збираються (ім'я, email, телефон), з якою метою, та як вони захищаються.",
+  "legal.privacyPlaceholder": "[Вставте юридичний текст про обробку файлів cookie та персональних даних тут...]",
+  "legal.termsHeading": "1. Правила бронювання",
+  "legal.termsText": "Ця сторінка є заглушкою. Тут буде розміщено текст публічної оферти або умов надання послуг. Вкажіть права та обов'язки сторін, умови оплати, скасування турів та повернення коштів.",
+  "legal.termsPlaceholder": "[Вставте юридичний текст договору публічної оферти тут...]",
 
   // Вхід / реєстрація
   "auth.login": "Вхід",
@@ -225,7 +276,7 @@ const uk = {
     "Не вдалося завантажити тури. Перевір, чи запущений бекенд (python manage.py runserver) і чи вказаний правильний VITE_API_URL.",
 };
 
-const ru: Record<keyof typeof uk, string> = {
+const en: Record<keyof typeof uk, string> = {
   // Общее
   "common.book": "Забронировать",
   "common.close": "Закрыть",
@@ -240,15 +291,46 @@ const ru: Record<keyof typeof uk, string> = {
   "common.loadingTours": "Загрузка туров…",
   "common.loadingReviews": "Загрузка отзывов…",
   "common.tourMeta": "{nights} ночей · {country} · {meal}",
-
+  
   // Хедер
+  "header.menuAria": "Меню навигации",
   "header.logoAlt": "Логотип",
   "header.brand": "На главную",
-  "header.advancedFilter": "Расширенный фильтр",
+  "header.advancedFilter": "Туры",
   "header.history": "История",
   "header.loginRegister": "Войти / Зарегистрироваться",
   "header.langAria": "Язык интерфейса",
   "header.welcome": "Привет",
+  "header.wantTourCta": "Хочу в тур!",
+  "header.wantTourCtaShort": "Хочу в тур",
+  "header.tourPickupContact": "Контакт подбора тура",
+  "header.workHours": "Пн–Вс: 09:00–20:00",
+  "header.support247": "Поддержка туристов 24/7",
+  "header.navFlights": "Авиабилеты",
+  "booking.generalRequest": "Подбор тура (без конкретного отеля)",
+  "header.navHotels": "Отели",
+  "travel.tabHotels": "Отели",
+  "travel.tabFlights": "Авиабилеты",
+  "travel.hotelsTitle": "Самостоятельное бронирование отелей",
+  "travel.flightsTitle": "Авиабилеты",
+  "travel.destinationLabel": "Куда планируете отправиться",
+  "travel.destinationPlaceholder": "Введите название города, курорта или отеля",
+  "travel.checkIn": "Дата заезда",
+  "travel.checkOut": "Дата выезда",
+  "travel.guests": "Гости",
+  "travel.from": "Вылет из",
+  "travel.fromPlaceholder": "Город или аэропорт вылета",
+  "travel.to": "Куда",
+  "travel.toPlaceholder": "Страна, город или аэропорт",
+  "travel.flightClass": "Класс перелёта",
+  "travel.classEconomy": "Эконом",
+  "travel.classBusiness": "Бизнес",
+  "travel.there": "Туда",
+  "travel.back": "Назад",
+  "travel.passengers": "Пассажиры",
+  "travel.baggageOnly": "Только с багажом",
+  "travel.noTransfers": "Без пересадок",
+  "travel.comingSoon": "Этот раздел пока в разработке — скоро здесь можно будет найти и забронировать самостоятельно.",
 
   // Главный экран
   "hero.title": "Найдите свой идеальный отдых",
@@ -259,6 +341,10 @@ const ru: Record<keyof typeof uk, string> = {
   "hero.people": "Количество человек",
   "hero.search": "Поиск",
   "hero.advancedSearch": "Расширенный поиск →",
+  "hero.eyebrow": "Поиск тура",
+  "hero.from": "Из города",
+  "hero.nights": "Продолжительность",
+  "hero.nightsShort": "ночей",
 
   // Расширенный фильтр
   "filters.title": "Расширенный поиск",
@@ -322,13 +408,19 @@ const ru: Record<keyof typeof uk, string> = {
   "hot.empty": "Горящих туров пока нет.",
 
   // О нас
-  "about.title": "О турагенте",
+  "about.title": "Про Marina World Travel",
   "about.p1":
-    "Мы — команда опытных специалистов в туристическом бизнесе с более чем 12-летним опытом работы на рынке. Каждый год мы помогаем тысячам семей и пар осуществить мечту об идеальном отпуске.",
+    "Marina World Travel — туристичне агентство, яке допомагає організувати подорожі легко, комфортно та без зайвих турбот.",
   "about.p2":
-    "Наш подход прост: глубокое знание направлений, честные цены и личное сопровождение на каждом этапе — от выбора отеля до возвращения домой.",
+    "Ми підбираємо тури, готелі, авіаквитки та трансфери відповідно до ваших побажань, бюджету та формату відпочинку.",
   "about.p3":
-    "Мы работаем только с проверенными операторами и отелями, чтобы ваше путешествие было беззаботным и незабываемым.",
+    "Працюємо з надійними туристичними партнерами та туроператорами, щоб запропонувати клієнтам актуальні варіанти подорожей.",
+  "about.p4":
+    "Наш принцип",
+  "about.p5":
+    "Індивідуальний підхід до кожного туриста.",
+  "about.p6":
+    "Ми не просто пропонуємо тур — ми допомагаємо знайти саме той варіант відпочинку, який підійде вам.",
   "about.viber": "Написать нам в Viber",
   "about.reviewsEmpty": "Скоро здесь появятся отзывы наших клиентов.",
 
@@ -356,6 +448,17 @@ const ru: Record<keyof typeof uk, string> = {
   "booking.submit": "Отправить заявку",
   "booking.error": "Не удалось отправить заявку. Попробуйте ещё раз.",
   "booking.successTitle": "Ваша заявка отправлена менеджеру, ожидайте обратной связи",
+  "booking.country": "Страна",
+
+  "legal.title": "Юридическая информация",
+  "legal.tabPrivacy": "Политика конфиденциальности",
+  "legal.tabTerms": "Условия использования (Оферта)",
+  "legal.privacyHeading": "1. Общие положения",
+  "legal.privacyText": "Эта страница является заглушкой. Здесь будет размещен текст вашей Политики конфиденциальности. Вы сможете описать, какие персональные данные собираются (имя, email, телефон), с какой целью, и как они защищаются.",
+  "legal.privacyPlaceholder": "[Вставьте юридический текст об обработке файлов cookie и персональных данных здесь...]",
+  "legal.termsHeading": "1. Правила бронирования",
+  "legal.termsText": "Эта страница является заглушкой. Здесь будет размещен текст публичной оферты или условий предоставления услуг. Укажите права и обязанности сторон, условия оплаты, отмены туров и возврата средств.",
+  "legal.termsPlaceholder": "[Вставьте юридический текст договора публичной оферты здесь...]",
 
   // Вход / регистрация
   "auth.login": "Вход",
@@ -434,7 +537,7 @@ const ru: Record<keyof typeof uk, string> = {
     "Не удалось загрузить туры. Проверь, запущен ли бекенд (python manage.py runserver) и указан ли правильный VITE_API_URL.",
 };
 
-export const DICT: Record<Lang, Record<string, string>> = { uk, ru };
+export const DICT: Record<Lang, Record<string, string>> = { uk, en };
 
 export type TKey = keyof typeof uk;
 export type TFunc = (key: TKey, vars?: Record<string, string | number>) => string;
@@ -450,9 +553,9 @@ const I18nContext = createContext<I18nValue | null>(null);
 function detectLang(): Lang {
   if (typeof window === "undefined") return "uk";
   const saved = window.localStorage.getItem(STORAGE_KEY);
-  if (saved === "uk" || saved === "ru") return saved;
+  if (saved === "uk" || saved === "en") return saved;
   const nav = window.navigator.language?.toLowerCase() ?? "";
-  return nav.startsWith("ru") ? "ru" : "uk";
+  return nav.startsWith("en") ? "en" : "uk";
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
