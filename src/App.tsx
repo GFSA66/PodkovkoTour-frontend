@@ -83,6 +83,24 @@ interface TourDetail extends Tour {
   photos: string[];
 }
 
+// Готель — окрема сутність, що живе у власній таблиці бази (не тур).
+// У туру є ночі та прив'язка до туроператора, у готелю — адреса/місто.
+interface Hotel {
+  id: number;
+  name: string;
+  stars: number;
+  country: string;
+  city?: string;
+  resort?: string;
+  address?: string;
+  meal?: string;
+  price?: string;
+  img: string;
+  description?: string;
+  photos?: string[];
+  is_hot?: boolean;
+}
+
 interface RefItem {
   id: number | string;
   name: string;
@@ -1438,11 +1456,12 @@ function LegalPage() {
 }
 // ─── Booking Modal ─────────────────────────────────────────────────────────────
 function BookingModal({
-  tourId, tourName, tourNights, user, preferredDateFrom, preferredDateTo,
+  kind, subjectId, subjectName, tourNights, user, preferredDateFrom, preferredDateTo,
   partyAdults, partyChildren, onClose, error, countryfrom
 }: {
-  tourId: number | null;
-  tourName: string;
+  kind: "tour" | "hotel";
+  subjectId: number | null;
+  subjectName: string;
   tourNights: number | null;
   user: User | null;
   preferredDateFrom: string;
@@ -1467,7 +1486,10 @@ function BookingModal({
   // САМЕ цього туру (Tour.nights) — це те, що вже "розраховано в турі", тож
   // вручну другу дату вводити не треба. Якщо кількість ночей з якоїсь
   // причини невідома — підстраховуємось раніше введеним preferredDateTo.
-  const returnDate = tourNights != null ? addNights(departureDate, tourNights) : preferredDateTo;
+  // Для туру дата повернення = дата вильоту + ночі туру. Для готелю ночей
+  // у моделі немає, тож беремо дату виїзду, введену в пошуку готелів.
+  const isHotel = kind === "hotel";
+  const returnDate = !isHotel && tourNights != null ? addNights(departureDate, tourNights) : preferredDateTo;
   const initialCountry = typeof countryfrom === "string" ? countryfrom : "";
   const missingFields = !email.trim() || !phone.trim() || !name.trim();
   const canSubmit = !missingFields && !submitting;
@@ -1495,9 +1517,12 @@ async function submit() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tour: tourId,
-          tour_name: tourName,
-          country: country || null, // <--- Добавлено здесь
+          // Для туру — tour/tour_name, для готелю — hotel/hotel_name.
+          tour: isHotel ? null : subjectId,
+          hotel: isHotel ? subjectId : null,
+          tour_name: isHotel ? "" : subjectName,
+          hotel_name: isHotel ? subjectName : "",
+          country: country || null,
           email, phone, full_name: name,
           preferred_contact: preferredContact,
           preferred_date_from: departureDate || null,
@@ -1536,21 +1561,21 @@ async function submit() {
         {!success ? (
           <>
             <div className="flex items-center justify-between mb-6">
-              <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }}>{t("booking.title")}</h2>
+              <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 24, fontWeight: 700 }}>{t(isHotel ? "booking.hotelTitle" : "booking.title")}</h2>
               <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 text-xl transition-colors">×</button>
             </div>
 
             <div className="space-y-4">
             {/* Поле, которое показывает название тура ИЛИ "Загальний запит" */}
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("booking.tour")}</label>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t(isHotel ? "booking.hotel" : "booking.tour")}</label>
                 <div className="h-13 px-4 flex items-center rounded-[10px] text-sm font-medium" style={{ background: "#F7F8F6", border: "1px solid #E2E4DF", height: 52 }}>
-                  {tourName || t("booking.generalRequest")}
+                  {subjectName || t("booking.generalRequest")}
                 </div>
               </div>
 
               {/* Поле для ввода страны - появляется ТОЛЬКО если это общий запрос (!tourName) */}
-              {!tourName && (
+              {!subjectName && (
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
                     {t("booking.country")} {/* Можете заменить на t("booking.country"), если есть такой перевод */}
@@ -1568,7 +1593,7 @@ async function submit() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t("booking.departureDate")}</label>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{t(isHotel ? "booking.checkIn" : "booking.departureDate")}</label>
                   <input
                     type="date"
                     min = {today}
@@ -1580,7 +1605,7 @@ async function submit() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                    {tourNights != null ? t("booking.returnDateNights", { n: tourNights }) : t("booking.returnDate")}
+                    {isHotel ? t("booking.checkOut") : tourNights != null ? t("booking.returnDateNights", { n: tourNights }) : t("booking.returnDate")}
                   </label>
                   <div className="h-13 px-4 flex items-center rounded-[10px] text-sm font-medium" style={{ background: "#F7F8F6", border: "1px solid #E2E4DF", height: 52 }}>
                     {returnDate || t("booking.pickDeparture")}
@@ -2189,18 +2214,36 @@ function ResetPasswordPage() {
     </div>
   );
 }
-function HotelsSearchPage() {
+function HotelsSearchPage({
+  hotels,
+  loading,
+  onBook,
+}: {
+  hotels: Hotel[];
+  loading: boolean;
+  onBook: (hotel: Hotel, dates: { checkIn: string; checkOut: string; guests: number }) => void;
+}) {
   const { t } = useI18n();
   const today = new Date().toISOString().split("T")[0];
   const [destination, setDestination] = useState("");
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
   const [guests, setGuests] = useState(2);
-  const [submitted, setSubmitted] = useState(false);
+  const resultsRef = useRef<HTMLDivElement>(null);
+
+  // Пошук готелів із власної бази (окремо від турів): фільтруємо за назвою,
+  // країною, містом чи курортом прямо під час введення.
+  const filteredHotels = useMemo(() => {
+    const q = destination.trim().toLowerCase();
+    if (!q) return hotels;
+    return hotels.filter((h) =>
+      [h.name, h.country, h.city, h.resort].some((v) => !!v && v.toLowerCase().includes(q))
+    );
+  }, [hotels, destination]);
 
   return (
-    <div className="max-w-[900px] mx-auto px-6 py-14">
-      <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }} className="mb-6">
+    <div className="max-w-[1000px] mx-auto px-6 py-14">
+      <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700, lineHeight: 1.2, minHeight: 68 }} className="mb-6">
         {t("travel.hotelsTitle")}
       </h1>
 
@@ -2234,15 +2277,53 @@ function HotelsSearchPage() {
             <Stepper value={guests} onChange={setGuests} />
           </div>
           <button
-            onClick={() => setSubmitted(true)}
+            onClick={() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
             className="h-14 px-8 rounded-[10px] text-white font-semibold text-base transition-all hover:opacity-90 active:scale-95 w-full sm:w-auto"
             style={{ background: "#2F6FED" }}
           >
             {t("hero.search")}
           </button>
         </div>
+      </div>
 
-        {submitted && <p className="mt-4 text-sm" style={{ color: "#1F7A53" }}>{t("travel.comingSoon")}</p>}
+      {/* Результати пошуку готелів із бази (окремо від турів) */}
+      <div className="mt-8" ref={resultsRef}>
+        {loading && <p style={{ color: "#66716B" }}>{t("hotels.loading")}</p>}
+        {!loading && hotels.length === 0 && <p style={{ color: "#66716B" }}>{t("hotels.empty")}</p>}
+        {!loading && hotels.length > 0 && (
+          <>
+            <p className="text-sm mb-4" style={{ color: "#66716B" }}>{t("hotels.found", { n: filteredHotels.length })}</p>
+            {filteredHotels.length === 0 && <p style={{ color: "#66716B" }}>{t("hotels.notFound")}</p>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredHotels.map((h) => (
+                <div key={h.id} className="flex flex-col" style={{ background: "#fff", borderRadius: 16, border: "1px solid #E2E4DF", boxShadow: "0 4px 16px rgba(31,42,36,0.06)", overflow: "hidden" }}>
+                  <div style={{ height: 190, overflow: "hidden" }}>
+                    {h.img && <img src={h.img} alt={h.name} className="w-full h-full object-cover" />}
+                  </div>
+                  <div className="p-5 flex flex-col flex-1">
+                    <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 18, fontWeight: 700, lineHeight: 1.3 }} className="mb-2">{h.name}</h3>
+                    <Stars count={h.stars || 0} />
+                    <p className="mt-2 text-sm" style={{ color: "#66716B" }}>
+                      {[h.country, h.city || h.resort].filter(Boolean).join(" · ")}
+                    </p>
+                    {h.meal && <p className="mt-1 text-sm" style={{ color: "#66716B" }}>{h.meal}</p>}
+                    {h.price && (
+                      <p style={{ fontFamily: "Fraunces, serif", fontSize: 22, fontWeight: 700, color: "#1F7A53" }} className="mt-3">{h.price}</p>
+                    )}
+                    <div className="flex-1" />
+                    <button
+                      onClick={() => onBook(h, { checkIn, checkOut, guests })}
+                      className="mt-4 w-full h-12 rounded-[10px] text-white font-semibold text-sm transition-all hover:opacity-90"
+                      style={{ background: "#2F6FED" }}
+                    >
+                      {t("common.book")}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -2278,7 +2359,7 @@ function FlightsSearchPage({
 
   return (
     <div className="max-w-[1000px] mx-auto px-6 py-14">
-      <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700 }} className="mb-6">
+      <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 700, lineHeight: 1.2, minHeight: 68 }} className="mb-6">
         {t("travel.flightsTitle")}
       </h1>
 
@@ -2693,6 +2774,23 @@ return (
 export default function AppContent() {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Вимикаємо нативну прокрутку браузера (session-history scroll restoration),
+  // щоб вона не конфліктувала з нашою логікою прокрутки.
+  useEffect(() => {
+    if ("scrollRestoration" in window.history) {
+      window.history.scrollRestoration = "manual";
+    }
+  }, []);
+
+  // При переході між сторінками готелів і рейсів прокручуємо сторінку вгору,
+  // щоб форма пошуку ("окно для вводу") не стрибала на збережену позицію.
+  useEffect(() => {
+    if (location.pathname === "/hotels" || location.pathname === "/flights") {
+      window.scrollTo(0, 0);
+    }
+  }, [location.pathname]);
 
   const [modal, setModal] = useState<Modal>(null);
   const [selectedTour, setSelectedTour] = useState<Tour | null>(null);
@@ -2718,7 +2816,28 @@ export default function AppContent() {
   const [userLoading, setUserLoading] = useState(true);
   const [pendingBooking, setPendingBooking] = useState(false);
 
-  
+  // ── Готелі (окрема база, не тури) ──────────────────────────────────────────
+  const [hotels, setHotels] = useState<Hotel[]>([]);
+  const [hotelsLoading, setHotelsLoading] = useState(true);
+  const [selectedHotel, setSelectedHotel] = useState<Hotel | null>(null);
+  const [hotelDates, setHotelDates] = useState<{ checkIn: string; checkOut: string; guests: number }>({ checkIn: "", checkOut: "", guests: 2 });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/hotels/`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!cancelled) setHotels(Array.isArray(data) ? data : data.results ?? []);
+      } catch {
+        if (!cancelled) setHotels([]);
+      } finally {
+        if (!cancelled) setHotelsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -2818,6 +2937,7 @@ export default function AppContent() {
   const hotTours = tours.filter((t) => t.is_hot);
 
   const openBooking = (tour: Tour) => {
+    setSelectedHotel(null);
     setSelectedTour(tour);
     if (!user) {
       setPendingBooking(true);
@@ -2827,7 +2947,22 @@ export default function AppContent() {
     setModal("booking");
   };
 
+  // Бронювання готелю окремо від туру: готель беремо з бази готелів, а дати
+  // заїзду/виїзду та кількість гостей — із форми пошуку готелів.
+  const openHotelBooking = (hotel: Hotel, dates: { checkIn: string; checkOut: string; guests: number }) => {
+    setSelectedTour(null);
+    setSelectedHotel(hotel);
+    setHotelDates(dates);
+    if (!user) {
+      setPendingBooking(true);
+      setModal("profile");
+      return;
+    }
+    setModal("booking");
+  };
+
   const openGeneralRequest = () => {
+  setSelectedHotel(null);
   setSelectedTour(null);
   if (!user) {
     setPendingBooking(true);
@@ -2888,7 +3023,7 @@ export default function AppContent() {
               </>
             }
           />
-          <Route path="/hotels" element={<HotelsSearchPage />} />
+          <Route path="/hotels" element={<HotelsSearchPage hotels={hotels} loading={hotelsLoading} onBook={openHotelBooking} />} />
           <Route path="/legal" element={<LegalPage />} />
           <Route path="/flights" element={<FlightsSearchPage filters={filters} onFiltersChange={setFilters} onOpenFilters={openFilters} onSearch={runSearch} refs={refs} />} />
           <Route path="/tour/:id" element={<TourDetailsPage onBook={openBooking} user={user} onRequireAuth={openProfile} />} />
@@ -2906,18 +3041,35 @@ export default function AppContent() {
 
       <Footer onLegal={openlegal}/>
       {modal === "booking" && (
-        <BookingModal
-          tourId={selectedTour?.id ?? null}
-          tourName={selectedTour?.name ?? ""}
-          tourNights={selectedTour?.nights ?? null}
-          countryfrom={countries[0]?.name || ""}
-          user={user}
-          preferredDateFrom={filters.dateFrom}
-          preferredDateTo={filters.dateTo}
-          partyAdults={filters.adults}
-          partyChildren={filters.children}
-          onClose={() => setModal(null)}
-        />
+        selectedHotel ? (
+          <BookingModal
+            kind="hotel"
+            subjectId={selectedHotel.id}
+            subjectName={selectedHotel.name}
+            tourNights={null}
+            countryfrom={selectedHotel.country || ""}
+            user={user}
+            preferredDateFrom={hotelDates.checkIn}
+            preferredDateTo={hotelDates.checkOut}
+            partyAdults={hotelDates.guests}
+            partyChildren={false}
+            onClose={() => setModal(null)}
+          />
+        ) : (
+          <BookingModal
+            kind="tour"
+            subjectId={selectedTour?.id ?? null}
+            subjectName={selectedTour?.name ?? ""}
+            tourNights={selectedTour?.nights ?? null}
+            countryfrom={countries[0]?.name || ""}
+            user={user}
+            preferredDateFrom={filters.dateFrom}
+            preferredDateTo={filters.dateTo}
+            partyAdults={filters.adults}
+            partyChildren={filters.children}
+            onClose={() => setModal(null)}
+          />
+        )
       )}
       {modal === "profile" && (
         <AuthProfileModal

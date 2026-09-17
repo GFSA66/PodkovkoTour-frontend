@@ -70,6 +70,13 @@ const uk = {
   "travel.baggageOnly": "Тільки з багажем",
   "travel.noTransfers": "Без пересадок",
   "travel.comingSoon": "Цей розділ ще в розробці — скоро тут можна буде знайти та забронювати самостійно.",
+  "travel.searching": "Пошук...",
+  "travel.noHotelsFound": "За вашим запитом готелів не знайдено.",
+  "travel.viewTours": "Переглянути тури",
+  "travel.submitError": "Не вдалося відправити заявку. Спробуйте ще раз.",
+  "travel.sendFlightRequest": "Надіслати заявку",
+  "travel.flightRequestSentTitle": "Заявку надіслано",
+  "travel.flightRequestSentText": "Менеджер підбере варіанти авіаквитків і зв'яжеться з вами найближчим часом.",
 
   // Головний екран
   "hero.title": "Знайдіть свій ідеальний відпочинок",
@@ -188,6 +195,17 @@ const uk = {
   "booking.error": "Не вдалося відправити заявку. Спробуйте ще раз.",
   "booking.successTitle": "Вашу заявку надіслано менеджеру, очікуйте зворотного зв'язку",
   "booking.country": "Країна",
+  // Бронювання готелю (окремо від туру)
+  "booking.hotelTitle": "Заявка на готель",
+  "booking.hotel": "Готель",
+  "booking.checkIn": "Дата заїзду",
+  "booking.checkOut": "Дата виїзду",
+
+  // Готелі (окрема база)
+  "hotels.loading": "Завантаження готелів…",
+  "hotels.empty": "Готелів поки немає в базі.",
+  "hotels.found": "Знайдено готелів: {n}",
+  "hotels.notFound": "За вашим запитом готелів не знайдено.",
 
   "legal.title": "Юридична інформація",
   "legal.tabPrivacy": "Політика конфіденційності",
@@ -331,6 +349,13 @@ const en: Record<keyof typeof uk, string> = {
   "travel.baggageOnly": "Только с багажом",
   "travel.noTransfers": "Без пересадок",
   "travel.comingSoon": "Этот раздел пока в разработке — скоро здесь можно будет найти и забронировать самостоятельно.",
+  "travel.searching": "Поиск...",
+  "travel.noHotelsFound": "По вашему запросу отелей не найдено.",
+  "travel.viewTours": "Смотреть туры",
+  "travel.submitError": "Не удалось отправить заявку. Попробуйте ещё раз.",
+  "travel.sendFlightRequest": "Отправить заявку",
+  "travel.flightRequestSentTitle": "Заявка отправлена",
+  "travel.flightRequestSentText": "Менеджер подберёт варианты авиабилетов и свяжется с вами в ближайшее время.",
 
   // Главный экран
   "hero.title": "Найдите свой идеальный отдых",
@@ -449,6 +474,17 @@ const en: Record<keyof typeof uk, string> = {
   "booking.error": "Не удалось отправить заявку. Попробуйте ещё раз.",
   "booking.successTitle": "Ваша заявка отправлена менеджеру, ожидайте обратной связи",
   "booking.country": "Страна",
+  // Бронирование отеля (отдельно от тура)
+  "booking.hotelTitle": "Заявка на отель",
+  "booking.hotel": "Отель",
+  "booking.checkIn": "Дата заезда",
+  "booking.checkOut": "Дата выезда",
+
+  // Отели (отдельная база)
+  "hotels.loading": "Загрузка отелей…",
+  "hotels.empty": "Отелей пока нет в базе.",
+  "hotels.found": "Найдено отелей: {n}",
+  "hotels.notFound": "По вашему запросу отелей не найдено.",
 
   "legal.title": "Юридическая информация",
   "legal.tabPrivacy": "Политика конфиденциальности",
